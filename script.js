@@ -1269,6 +1269,11 @@ function updateResultIcon(type) {
    RESULT MODAL
 ========================================================= */
 
+/* =========================================================
+   RESULT MODAL
+   MOBILE-FIRST SCAN RESULT DISPLAY
+========================================================= */
+
 function showResultModal(
     type,
     status,
@@ -1277,279 +1282,219 @@ function showResultModal(
     timestamp,
     message
 ) {
-
-    const modalElement =
-        document.getElementById(
-            "resultModal"
-        );
-
+    const modalElement = document.getElementById("resultModal");
 
     if (!modalElement) {
-
-        console.error(
-            "Result modal element not found."
-        );
-
+        console.error("Result modal element not found.");
         return;
-
     }
 
-
-    /*
-        Bootstrap modal instance.
-    */
-
-    const modal =
-        bootstrap.Modal.getOrCreateInstance(
-            modalElement
-        );
-
+    /* -----------------------------------------------------
+       GET MODAL ELEMENTS
+    ----------------------------------------------------- */
 
     const modalIcon =
-        document.getElementById(
-            "modalIcon"
-        );
-
+        document.getElementById("modalIcon");
 
     const modalStatus =
-        document.getElementById(
-            "modalStatus"
-        );
-
+        document.getElementById("modalStatus");
 
     const modalName =
-        document.getElementById(
-            "modalName"
-        );
-
+        document.getElementById("modalName");
 
     const modalId =
-        document.getElementById(
-            "modalId"
-        );
-
+        document.getElementById("modalId");
 
     const modalTime =
-        document.getElementById(
-            "modalTime"
-        );
-
+        document.getElementById("modalTime");
 
     const modalMessage =
-        document.getElementById(
-            "modalMessage"
-        );
+        document.getElementById("modalMessage");
 
 
-    /* ---------------------------------------------------------
-       SAFE VALUES
-    --------------------------------------------------------- */
+    /* -----------------------------------------------------
+       NORMALIZE DATA
+    ----------------------------------------------------- */
+
+    const safeType =
+        String(type || "error").toLowerCase();
 
     const safeStatus =
-        String(
-            status ||
-            "TRY AGAIN"
-        )
-            .trim();
-
-
-    /*
-        CRITICAL FIX
-
-        Never immediately fall back to:
-
-        "ATTENDEE NOT IDENTIFIED"
-
-        because the attendee ID itself is useful
-        identifying information.
-
-        Priority:
-
-        1. Name
-        2. Attendee ID
-        3. ATTENDEE
-    */
+        String(status || "TRY AGAIN");
 
     const safeName =
-        String(
-            name ||
-            attendeeId ||
-            "ATTENDEE"
-        )
-            .trim();
-
+        String(name || "ATTENDEE NOT IDENTIFIED");
 
     const safeId =
-        String(
-            attendeeId ||
-            "NO ATTENDEE ID"
-        )
-            .trim();
+        String(attendeeId || "NO ATTENDEE ID");
 
-
-    const safeTime =
-        String(
-            timestamp ||
-            getCurrentTimestamp()
-        )
-            .trim();
-
+    const safeTimestamp =
+        String(timestamp || getCurrentTimestamp());
 
     const safeMessage =
         String(
             message ||
             "Please try again."
-        )
-            .trim();
+        );
 
 
-    /* ---------------------------------------------------------
-       RESET ICON
-    --------------------------------------------------------- */
+    /* -----------------------------------------------------
+       RESET MODAL
+    ----------------------------------------------------- */
 
-    if (modalIcon) {
+    modalElement.classList.remove(
+        "modal-success",
+        "modal-already",
+        "modal-error"
+    );
 
-        modalIcon.className =
-            "modal-result-icon";
 
-    }
+    /* -----------------------------------------------------
+       STATUS TYPE
+    ----------------------------------------------------- */
 
+    if (safeType === "success") {
 
-    /* ---------------------------------------------------------
-       SUCCESS
-    --------------------------------------------------------- */
-
-    if (
-        type === "success"
-    ) {
+        modalElement.classList.add(
+            "modal-success"
+        );
 
         if (modalIcon) {
-
             modalIcon.innerHTML =
                 '<i class="bi bi-check-lg"></i>';
-
-            modalIcon.style.color =
-                "var(--success)";
-
         }
 
-
         if (modalStatus) {
-
-            modalStatus.style.color =
-                "var(--success)";
-
+            modalStatus.textContent =
+                "SCAN SUCCESSFULLY";
         }
 
     }
 
+    else if (safeType === "already") {
 
-    /* ---------------------------------------------------------
-       ALREADY SCANNED
-    --------------------------------------------------------- */
-
-    else if (
-        type === "already"
-    ) {
+        modalElement.classList.add(
+            "modal-already"
+        );
 
         if (modalIcon) {
-
             modalIcon.innerHTML =
                 '<i class="bi bi-exclamation-lg"></i>';
-
-            modalIcon.style.color =
-                "var(--warning)";
-
         }
 
-
         if (modalStatus) {
-
-            modalStatus.style.color =
-                "var(--warning)";
-
+            modalStatus.textContent =
+                "ALREADY SCANNED";
         }
 
     }
-
-
-    /* ---------------------------------------------------------
-       ERROR
-    --------------------------------------------------------- */
 
     else {
 
-        if (modalIcon) {
+        modalElement.classList.add(
+            "modal-error"
+        );
 
+        if (modalIcon) {
             modalIcon.innerHTML =
                 '<i class="bi bi-x-lg"></i>';
-
-            modalIcon.style.color =
-                "var(--danger)";
-
         }
-
 
         if (modalStatus) {
-
-            modalStatus.style.color =
-                "var(--danger)";
-
+            modalStatus.textContent =
+                safeStatus;
         }
-
     }
 
 
-    /* ---------------------------------------------------------
-       POPULATE MODAL
-    --------------------------------------------------------- */
-
-    if (modalStatus) {
-
-        modalStatus.textContent =
-            safeStatus;
-
-    }
-
+    /* -----------------------------------------------------
+       POPULATE ATTENDEE INFORMATION
+    ----------------------------------------------------- */
 
     if (modalName) {
-
         modalName.textContent =
             safeName;
-
     }
-
 
     if (modalId) {
-
         modalId.textContent =
             safeId;
-
     }
-
 
     if (modalTime) {
-
         modalTime.textContent =
-            safeTime;
-
+            safeTimestamp;
     }
-
 
     if (modalMessage) {
-
         modalMessage.textContent =
             safeMessage;
-
     }
 
 
-    /* ---------------------------------------------------------
+    /* -----------------------------------------------------
        SHOW MODAL
-    --------------------------------------------------------- */
+    ----------------------------------------------------- */
 
-    modal.show();
+    try {
 
+        const modal =
+            bootstrap.Modal.getOrCreateInstance(
+                modalElement,
+                {
+                    backdrop: true,
+                    keyboard: true,
+                    focus: true
+                }
+            );
+
+        modal.show();
+
+        /*
+         * Force the modal to the front.
+         * This is particularly useful on mobile browsers
+         * where scanner/video elements may create stacking
+         * contexts.
+         */
+
+        requestAnimationFrame(() => {
+
+            modalElement.style.zIndex = "1060";
+
+            const backdrop =
+                document.querySelector(
+                    ".modal-backdrop"
+                );
+
+            if (backdrop) {
+                backdrop.style.zIndex = "1055";
+            }
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Unable to display result modal:",
+            error
+        );
+
+        /*
+         * Fallback:
+         * If Bootstrap fails for any reason,
+         * keep the result visible in the main status panel.
+         */
+
+        updateStatus(
+            safeType,
+            safeStatus,
+            safeName,
+            safeTimestamp,
+            safeMessage
+        );
+    }
 }
 
 
