@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#071A2B"/>
+      <stop offset="45%" stop-color="#0B4963"/>
+      <stop offset="100%" stop-color="#087F5B"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4FD1C5"/>
+      <stop offset="100%" stop-color="#A7F3D0"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="360" rx="28" fill="url(#bg)"/>
+  <circle cx="1030" cy="55" r="150" fill="#21C997" opacity=".10"/>
+  <circle cx="1110" cy="300" r="210" fill="#38BDF8" opacity=".08"/>
+  <circle cx="130" cy="320" r="180" fill="#10B981" opacity=".08"/>
+
+  <g opacity=".14" stroke="#D1FAE5" fill="none">
+    <path d="M0 285 C180 205 260 340 450 260 S760 210 1200 105"/>
+    <path d="M0 320 C220 235 310 360 510 290 S850 235 1200 145"/>
+  </g>
+
+  <g transform="translate(72 72)">
+    <rect width="92" height="92" rx="24" fill="#FFFFFF" opacity=".12" stroke="#B7F7DF" stroke-opacity=".35"/>
+    <path d="M24 30h18v18H24zM50 30h18v18H50zM24 56h18v18H24z" fill="none" stroke="#D1FAE5" stroke-width="6"/>
+    <path d="M50 56h7v7h11v11H57V67H50z" fill="#4FD1C5"/>
+    <circle cx="76" cy="20" r="6" fill="#A7F3D0" filter="url(#glow)"/>
+  </g>
+
+  <text x="72" y="215" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="700" letter-spacing="2">CODE GREEN 2026</text>
+  <text x="74" y="255" fill="#D1FAE5" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="600">8th MIMAROPA Regional IT Congress</text>
+  <rect x="74" y="282" width="520" height="3" rx="2" fill="url(#line)"/>
+  <text x="74" y="320" fill="#BFEFE0" font-family="Arial, Helvetica, sans-serif" font-size="15">QR-Based Attendee Check-In &amp; Validation System</text>
+
+  <g transform="translate(930 160)">
+    <rect x="0" y="0" width="170" height="120" rx="20" fill="#FFFFFF" opacity=".08" stroke="#D1FAE5" stroke-opacity=".25"/>
+    <rect x="27" y="25" width="116" height="70" rx="12" fill="#071A2B" opacity=".45"/>
+    <path d="M42 40h18v18H42zM70 40h18v18H70zM42 68h18v18H42zM70 68h10v10H70zM91 40h22v10H91zM101 58h12v28H101z" fill="#A7F3D0"/>
+  </g>
+</svg>
