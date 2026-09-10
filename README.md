@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/code-green-header.svg" alt="CODE GREEN 2026 — 8th MIMAROPA Regional IT Congress" width="100%">
+<img src="code-green-header.svg" alt="CODE GREEN 2026 — 8th MIMAROPA Regional IT Congress" width="100%">
 
 <br>
 
@@ -23,64 +23,33 @@
 
 ---
 
-## System Preview
+## Live System Preview
+
+The interface is designed for the actual event check-in workflow and adapts across mobile, tablet, and desktop screens.
+
+### Mobile UI
 
 <div align="center">
-
-| Registration | QR Check-In | Validation | Result |
-|:---:|:---:|:---:|:---:|
-| Google Form | Camera Scanner | Apps Script | Responsive Popup |
-| Attendee ID + QR | Mobile / Tablet / Laptop | Station Rules | Status + Timestamp |
-
+<img src="/assets/mobile-preview.png" alt="Mobile UI preview of CODE GREEN 2026 QR Check-In System" width="320">
 </div>
 
-```text
-Google Form
-     |
-     v
-Attendee Registration
-     |
-     v
-Attendee ID + QR Code
-     |
-     v
-+--------------------------+
-|     CODE GREEN 2026      |
-|      QR CHECK-IN         |
-|                          |
-|   [ QR CAMERA VIEW ]     |
-|                          |
-| Attendance | AM | PM     |
-|                          |
-|   [ ATTENDEE ID ]        |
-+------------+-------------+
-             |
-             v
-     Google Apps Script
-             |
-      +------+------+
-      |             |
-      v             v
-   Validate       Record
-   Station        Timestamp
-      |             |
-      +------+------+
-             |
-             v
-       Google Sheet
-             |
-             v
-+--------------------------+
-|      SCAN RESULT         |
-|                          |
-|   SCAN SUCCESSFULLY      |
-|   ATTENDEE NAME          |
-|   ATTENDEE ID            |
-|   TIMESTAMP              |
-|                          |
-|   CONTINUE SCANNING      |
-+--------------------------+
-```
+### Desktop UI
+
+<div align="center">
+<img src="assets/desktop-preview.png" alt="Desktop UI preview of CODE GREEN 2026 QR Check-In System" width="900">
+</div>
+
+> These SVG previews illustrate the responsive interface and visual design of the system. The deployed GitHub Pages application remains the live operational interface.
+
+---
+
+## System Workflow
+
+<div align="center">
+<img src="assets/system-workflow.svg" alt="CODE GREEN 2026 visual system workflow diagram" width="100%">
+</div>
+
+The system connects attendee registration, QR scanning, Apps Script validation, Google Sheets recording, and responsive result feedback into one event check-in workflow.
 
 ---
 
@@ -88,163 +57,136 @@ Attendee ID + QR Code
 
 This system is a dedicated event check-in and validation interface for the **8th MIMAROPA Regional IT Congress — CODE GREEN 2026**.
 
-It is designed to provide fast QR-based attendee verification and station tracking while keeping the operator interface responsive across **mobile phones, tablets, and laptops**.
-
-> **Scope:** This repository is intended solely for the attendance and event-validation operations of the MIMAROPA IT Congress.
+Its sole purpose is to support the **attendance and event-validation operations of the MIMAROPA IT Congress**, including Attendance, AM Snack, and PM Snack checkpoints.
 
 ---
 
 ## Check-In Flow
 
-### 01 — Attendance
-
-The attendee scans the QR code for the first required checkpoint.
+### Attendance
 
 ```text
-First Scan  →  SCAN SUCCESSFULLY
-Repeat Scan →  ALREADY SCANNED
+QR Scan
+   ↓
+Find Attendee
+   ↓
+Check Attendance
+   ↓
+SUCCESS / ALREADY SCANNED
 ```
 
-### 02 — AM Snack
-
-AM Snack can only be claimed after Attendance has been recorded.
+### AM Snack
 
 ```text
-Attendance missing → TRY AGAIN / DENIED
-Already claimed    → ALREADY SCANNED
-Valid               → SCAN SUCCESSFULLY
+QR Scan
+   ↓
+Verify Attendance
+   ↓
+Check AM Snack
+   ↓
+SUCCESS / ALREADY SCANNED / DENIED
 ```
 
-### 03 — PM Snack
-
-PM Snack requires both Attendance and AM Snack.
+### PM Snack
 
 ```text
-Attendance missing → TRY AGAIN / DENIED
-AM Snack missing   → TRY AGAIN / DENIED
-Already claimed    → ALREADY SCANNED
-Valid               → SCAN SUCCESSFULLY
-```
-
----
-
-## Result Interface
-
-The scan result is presented as a responsive popup so the operator receives immediate feedback.
-
-<div align="center">
-
-### Successful Scan
-
-```text
-┌─────────────────────────────────┐
-│                                 │
-│          SCAN SUCCESSFULLY      │
-│                                 │
-│          ATTENDEE NAME          │
-│          ATT-IND-XXXX           │
-│                                 │
-│       09/10/2026 · 07:57 PM     │
-│                                 │
-│    Attendance recorded          │
-│    successfully.                │
-│                                 │
-│       CONTINUE SCANNING         │
-└─────────────────────────────────┘
-```
-
-### Duplicate Scan
-
-```text
-┌─────────────────────────────────┐
-│                                 │
-│          ALREADY SCANNED        │
-│                                 │
-│          ATTENDEE NAME          │
-│          ATT-IND-XXXX           │
-│                                 │
-│       09/10/2026 · 07:57 PM     │
-│                                 │
-│    This station was already     │
-│    recorded for this attendee.  │
-│                                 │
-│       CONTINUE SCANNING         │
-└─────────────────────────────────┘
-```
-
-</div>
-
----
-
-## Responsive Interface
-
-The frontend adapts to the device being used at the event.
-
-```text
-MOBILE
-┌──────────────────────┐
-│   CODE GREEN 2026    │
-├──────────────────────┤
-│                      │
-│      QR CAMERA       │
-│                      │
-├──────────────────────┤
-│   ATTENDANCE         │
-│   AM SNACK           │
-│   PM SNACK           │
-├──────────────────────┤
-│   ATTENDEE ID        │
-│   [              ]   │
-│       SUBMIT         │
-└──────────────────────┘
-
-
-TABLET
-┌────────────────────┬───────────────────┐
-│                    │                   │
-│     QR CAMERA      │  STATION CONTROL  │
-│                    │                   │
-│                    │  ATTENDANCE       │
-│                    │  AM SNACK         │
-│                    │  PM SNACK         │
-└────────────────────┴───────────────────┘
-
-
-LAPTOP
-┌──────────────────────────┬──────────────────────────┐
-│                          │                          │
-│        QR CAMERA         │     STATION CONTROLS     │
-│                          │                          │
-│                          │     ATTENDANCE            │
-│                          │     AM SNACK              │
-│                          │     PM SNACK              │
-│                          │                          │
-│                          │     ATTENDEE ID           │
-└──────────────────────────┴──────────────────────────┘
+QR Scan
+   ↓
+Verify Attendance
+   ↓
+Verify AM Snack
+   ↓
+Check PM Snack
+   ↓
+SUCCESS / ALREADY SCANNED / DENIED
 ```
 
 ---
 
-## Visual Design
+## Validation Rules
 
-The CODE GREEN interface uses a blue-and-green visual system with:
+| Station | Requirement | Duplicate Protection |
+|---|---|---|
+| Attendance | Attendee must exist | Yes |
+| AM Snack | Attendance must be recorded | Yes |
+| PM Snack | Attendance + AM Snack must be recorded | Yes |
 
-- Deep navy backgrounds
+The backend performs the authoritative validation before any station record is written.
+
+---
+
+## Result Feedback
+
+The operator receives an immediate result after a scan.
+
+| Result | Meaning |
+|---|---|
+| **SCAN SUCCESSFULLY** | The selected station was successfully recorded. |
+| **ALREADY SCANNED** | The selected station was already recorded for the attendee. |
+| **TRY AGAIN** | A prerequisite or validation condition was not satisfied. |
+| **ATTENDEE NOT FOUND** | The attendee ID does not exist. |
+| **CONNECTION ERROR** | The frontend could not obtain a valid backend response. |
+
+The result interface can display:
+
+- Attendee name
+- Attendee ID
+- Timestamp
+- Validation message
+- Current station
+- Continue-scanning action
+
+---
+
+## Responsive UI
+
+The system is intended for:
+
+```text
+Mobile
+   ↓
+Tablet
+   ↓
+Laptop / Desktop
+```
+
+The UI uses the CODE GREEN visual language:
+
+- Deep navy
+- Blue
+- Cyan
+- Emerald green
 - Blue-to-green gradients
-- Cyan highlights
-- Emerald accents
-- Glassmorphism panels
+- Glassmorphism surfaces
 - Neumorphism-inspired controls
 - Soft shadows
-- Rounded surfaces
+- Rounded cards
 - Responsive spacing
-- Clear success, warning, and error states
-
-The visual design is intentionally optimized for **fast event operations**, keeping important information prominent without unnecessary interface clutter.
+- Clear status states
 
 ---
 
-## Frontend Structure
+## Registration & QR Workflow
+
+```text
+Google Form
+     ↓
+Form Submission Trigger
+     ↓
+Generate Attendee ID
+     ↓
+Generate QR Code
+     ↓
+Generate Registration Email
+     ↓
+Attendee Receives QR
+     ↓
+QR Used at Event Check-In
+```
+
+---
+
+## Frontend Architecture
 
 ```text
 CODE-GREEN-2026/
@@ -253,110 +195,50 @@ CODE-GREEN-2026/
 ├── style.css
 ├── script.js
 ├── code-green-header.svg
+├── system-workflow.svg
+├── mobile-preview.svg
+├── desktop-preview.svg
 └── README.md
 ```
 
 ### `index.html`
 
-Page structure and interface components.
+Contains the page structure and interface components.
 
 ### `style.css`
 
-Responsive layout, visual theme, glassmorphism/neumorphism styling, modal design, and animations.
+Controls the responsive layout, visual theme, glassmorphism/neumorphism styling, result modal, and animations.
 
 ### `script.js`
 
-QR scanning, backend communication, validation-result handling, popup behavior, sound feedback, and UI animations.
-
-### `code-green-header.svg`
-
-Lightweight scalable event header used by this README. SVG keeps the header sharp across desktop and mobile displays.
+Handles QR scanning, station selection, backend requests, validation-result handling, popup behavior, sound feedback, and UI animations.
 
 ---
 
 ## Backend Architecture
 
 ```text
-                FRONTEND
-                   |
-                   | attendeeId + session
-                   v
-        +------------------------+
-        |   GOOGLE APPS SCRIPT   |
-        |     VALIDATION API     |
-        +-----------+------------+
-                    |
-          +---------+---------+
-          |                   |
-          v                   v
-   Validate attendee      Validate station
-          |                   |
-          +---------+---------+
-                    |
-                    v
-             Google Sheet
-                    |
-                    v
-             JSON Response
-                    |
-                    v
-             Result Popup
+Frontend
+   │
+   │ attendee ID + selected station
+   ▼
+Google Apps Script
+   │
+   ├── Find attendee
+   ├── Validate station
+   ├── Check prerequisites
+   ├── Check duplicate
+   └── Record timestamp
+   │
+   ▼
+Google Sheets
+   │
+   ▼
+JSON response
+   │
+   ▼
+Responsive result popup
 ```
-
-The backend is responsible for the authoritative validation of attendee and station status.
-
----
-
-## Registration & QR Workflow
-
-```text
-Google Form
-    |
-    v
-Form Submission Trigger
-    |
-    v
-Generate Attendee ID
-    |
-    v
-Generate QR Code
-    |
-    v
-Generate Event Pass Email
-    |
-    v
-Attendee receives QR
-    |
-    v
-QR used at event check-in
-```
-
----
-
-## Manual Override
-
-A manual override is available for exceptional operational cases.
-
-```text
-Manual Override
-      |
-      v
-Attendee ID
-      |
-      v
-Authorization
-      |
-      v
-Validate Request
-      |
-      v
-Apply Station Action
-      |
-      v
-Record Timestamp
-```
-
-Authorization credentials should **never be committed to a public GitHub repository**.
 
 ---
 
@@ -373,6 +255,37 @@ Authorization credentials should **never be committed to a public GitHub reposit
 | Records | Google Sheets |
 | Registration | Google Forms |
 | Email | Apps Script Mail Service |
+
+---
+
+## GitHub Pages Deployment
+
+The frontend is suitable for deployment through GitHub Pages:
+
+```text
+GitHub Repository
+       ↓
+GitHub Pages
+       ↓
+HTTPS Web Interface
+       ↓
+Event Check-In Devices
+```
+
+The frontend communicates with the deployed Google Apps Script Web App for validation and record processing.
+
+---
+
+## Security
+
+For production/event deployment:
+
+- Do not publish authorization PINs.
+- Do not commit API keys or credentials.
+- Restrict Google Sheet access to authorized personnel.
+- Keep sensitive configuration outside public frontend code.
+- Use HTTPS for the public check-in interface.
+- Limit access to attendee records appropriately.
 
 ---
 
@@ -401,51 +314,14 @@ Authorization credentials should **never be committed to a public GitHub reposit
 
 ---
 
-## Security
-
-For deployment:
-
-- Do not publish authorization PINs.
-- Do not commit API keys or credentials.
-- Restrict Google Sheet access to authorized personnel.
-- Keep sensitive configuration in Apps Script rather than public frontend code.
-- Use HTTPS for the public check-in interface.
-- Treat attendee records as operational data and limit access appropriately.
-
----
-
-## Deployment
-
-### Frontend
-
-The interface can be deployed using GitHub Pages:
-
-```text
-GitHub Repository
-       |
-       v
-GitHub Pages
-       |
-       v
-HTTPS Check-In Interface
-```
-
-### Backend
-
-Google Apps Script remains responsible for validation and Google Sheet updates.
-
----
-
 <div align="center">
 
-### CODE GREEN 2026
+<h3>CODE GREEN 2026</h3>
 
-**8th MIMAROPA Regional IT Congress**
+<p><strong>8th MIMAROPA Regional IT Congress</strong></p>
 
-<sub>QR-Based Attendee Check-In & Validation System</sub>
+<p>QR-Based Attendee Check-In & Validation System</p>
 
-<br><br>
-
-<sub>Built exclusively for the attendance and event-validation operations of the MIMAROPA IT Congress.</sub>
+<sub>Built exclusively for the attendance and event-validation operations of the MIMAROPA IT Congress.-MeowMeow</sub>
 
 </div>
