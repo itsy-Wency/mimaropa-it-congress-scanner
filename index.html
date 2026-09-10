@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>8th MIMAROPA IT Congress - Fast Check-In</title>
+  
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <style>
+    :root {
+      --primary: #1b5e20;
+      --bg: #f4f7f6;
+    }
+    
+    html, body { 
+      height: 100vh; 
+      max-height: 100vh; 
+      overflow: hidden; 
+      background-color: var(--bg); 
+      font-family: 'Segoe UI', system-ui, sans-serif; 
+    }
+    
+    .app-viewport { 
+      height: 100vh; 
+      display: flex; 
+      flex-direction: column; 
+      padding: 12px; 
+      box-sizing: border-box; 
+    }
+    
+    .header-banner { 
+      background: linear-gradient(135deg, #1b5e20, #2e7d32); 
+      color: white; 
+      border-radius: 10px; 
+      padding: 10px; 
+      text-align: center; 
+      flex-shrink: 0; 
+    }
+    
+    .main-grid { 
+      display: flex; 
+      flex: 1; 
+      gap: 15px; 
+      margin-top: 10px; 
+      min-height: 0; 
+    }
+    
+    .panel-card { 
+      background: #ffffff; 
+      border-radius: 12px; 
+      padding: 15px; 
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
+      display: flex; 
+      flex-direction: column; 
+    }
+    
+    .scanner-panel { flex: 1; align-items: center; justify-content: center; }
+    #reader { width: 100%; max-width: 380px; border-radius: 10px; overflow: hidden; border: 2px dashed #a5d6a7; }
+    .controls-panel { flex: 1.2; justify-content: space-between; }
+    
+    .btn-check:checked + .btn-outline-success { 
+      background-color: var(--primary) !important; 
+      color: white !important; 
+      border-color: var(--primary) !important; 
+    }
+    
+    .status-box { 
+      flex: 1; 
+      margin-top: 10px; 
+      border-radius: 8px; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      font-weight: 600; 
+      font-size: 1.05rem; 
+      text-align: center; 
+      padding: 15px; 
+      transition: all 0.15s ease; 
+    }
+    
+    .status-box.idle { background-color: #e9ecef; color: #495057; border: 1px solid #ced4da; }
+    .status-box.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .status-box.already { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+    .status-box.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    
+    @media (max-width: 768px) { 
+      body { overflow: auto; height: auto; } 
+      .app-viewport { height: auto; } 
+      .main-grid { flex-direction: column; } 
+    }
+  </style>
+</head>
+<body>
+
+<div class="app-viewport">
+  <div class="header-banner">
+    <h5 class="m-0 fw-bold">8th MIMAROPA Regional IT Congress</h5>
+    <small style="font-size: 11px;">CODE GREEN 2026: Empowering Sustainable Innovation Through IT</small>
+  </div>
+
+  <div class="main-grid">
+    <div class="panel-card scanner-panel">
+      <div id="reader"></div>
+      <small class="text-muted mt-2">Position QR Code in the frame</small>
+    </div>
+
+    <div class="panel-card controls-panel">
+      <div>
+        <label class="form-label fw-bold text-secondary mb-1" style="font-size: 13px;">1. Select Station:</label>
+        <div class="btn-group w-100 mb-3" role="group">
+          <input type="radio" class="btn-check" name="session" id="btnAtt" value="ATTENDANCE" checked>
+          <label class="btn btn-outline-success py-2 fw-semibold" for="btnAtt">📋 Attendance</label>
+
+          <input type="radio" class="btn-check" name="session" id="btnAM" value="AM_SNACK">
+          <label class="btn btn-outline-success py-2 fw-semibold" for="btnAM">🥐 AM Snack</label>
+
+          <input type="radio" class="btn-check" name="session" id="btnPM" value="PM_SNACK">
+          <label class="btn btn-outline-success py-2 fw-semibold" for="btnPM">🥪 PM Snack</label>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <label class="form-label fw-bold text-secondary m-0" style="font-size: 13px;">2. Enter Attendee ID:</label>
+          <button class="btn btn-link btn-sm p-0 text-decoration-none" onclick="loadAttendeeSuggestions()">🔄 Sync IDs</button>
+        </div>
+        <div class="input-group">
+          <input 
+            type="text" 
+            id="searchInput" 
+            class="form-control text-uppercase fw-bold" 
+            list="attendeesDatalist" 
+            placeholder="e.g. ATT-IND-RIVERA1" 
+            autocomplete="off" 
+            onkeypress="handleKeyPress(event)" 
+          />
+          <datalist id="attendeesDatalist"></datalist>
+          <button class="btn btn-success fw-bold px-3" type="button" onclick="submitSearch()">Submit</button>
+        </div>
+      </div>
+
+      <div id="statusBox" class="status-box idle">Ready to scan...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const DEPLOYED_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx6VoSK_DH2cglmh95detPoEhpy1TD7xt6T1u289S8XXRsOudVpYhvbkOJDRITo9rtr/exec";
+  let html5QrCode;
+  let isProcessing = false;
+  let lastScannedCode = "";
+  let lastScanTime = 0;
+//for external website to open camera
+  window.onload = function() {
+    loadAttendeeSuggestions();
+    initScanner();
+  };
+
+  function playSound(type) {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      if (type === 'success') {
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        osc.start(); osc.stop(ctx.currentTime + 0.12);
+      } else {
+        osc.frequency.setValueAtTime(220, ctx.currentTime);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        osc.start(); osc.stop(ctx.currentTime + 0.25);
+      }
+    } catch (e) {}
+  }
+
+  function loadAttendeeSuggestions() {
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run.withSuccessHandler(populateDatalist).getRegisteredAttendees();
+    }
+  }
+
+  function populateDatalist(list) {
+    const datalist = document.getElementById('attendeesDatalist');
+    datalist.innerHTML = '';
+    if (!list) return;
+    list.forEach(item => {
+      const opt = document.createElement('option');
+      opt.value = item.id;
+      opt.label = `${item.id} (${item.name})`;
+      datalist.appendChild(opt);
+    });
+  }
+
+  function initScanner() {
+    html5QrCode = new Html5Qrcode("reader");
+    html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: 15, qrbox: { width: 220, height: 220 } },
+      (decodedText) => {
+        const now = Date.now();
+        if (decodedText === lastScannedCode && (now - lastScanTime) < 2500) return;
+        
+        lastScannedCode = decodedText;
+        lastScanTime = now;
+        
+        document.getElementById('searchInput').value = decodedText.trim().toUpperCase();
+        processCheckIn(decodedText.trim().toUpperCase());
+      },
+      () => {}
+      //modify this to easily see the exact error with camera
+        ).catch(err => {
+            console.error("Camera initialization failed:", err);
+
+            updateStatus(
+                "⚠️ Camera initialization failed.<br><small>" +
+                err +
+                "</small>",
+                "error"
+            );
+        });
+  }
+
+  function handleKeyPress(e) { if (e.key === 'Enter') submitSearch(); }
+
+  function submitSearch() {
+    const val = document.getElementById('searchInput').value.trim().toUpperCase();
+    if (!val) return updateStatus("Please enter an Attendee ID.", "error");
+    processCheckIn(val);
+  }
+
+  function processCheckIn(attendeeId) {
+    if (isProcessing) return;
+    isProcessing = true;
+
+    const session = document.querySelector('input[name="session"]:checked').value;
+    updateStatus(`⚡ Verifying "${attendeeId}"...`, "idle");
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(handleResponse)
+        .withFailureHandler(handleError)
+        .processScan(attendeeId, session);
+    } else {
+      fetch(DEPLOYED_WEB_APP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ attendeeId: attendeeId, session: session })
+      })
+      .then(res => res.json())
+      .then(handleResponse)
+      .catch(handleError);
+    }
+  }
+
+  function handleResponse(res) {
+    if (res.status === 'SUCCESS') {
+      playSound('success');
+      updateStatus(res.message, "success");
+      document.getElementById('searchInput').value = "";
+    } else if (res.status === 'ALREADY_PROCESSED') {
+      playSound('error');
+      updateStatus(res.message, "already");
+    } else {
+      playSound('error');
+      updateStatus(res.message, "error");
+    }
+    setTimeout(() => { isProcessing = false; }, 400);
+  }
+
+  function handleError(err) {
+    playSound('error');
+    updateStatus("❌ Connection busy. Tap Submit or Scan again.", "error");
+    setTimeout(() => { isProcessing = false; }, 400);
+  }
+
+  function updateStatus(msg, type) {
+    const box = document.getElementById('statusBox');
+    box.className = "status-box " + type;
+    box.innerHTML = msg;
+  }
+</script>
+</body>
+</html>
