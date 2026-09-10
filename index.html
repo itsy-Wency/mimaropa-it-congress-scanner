@@ -146,16 +146,16 @@
 </div>
 
 <script>
-  const DEPLOYED_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw6aqArIX_eXtrfBDe5_iiqX-97-Zfwbgt3K_P21P56jP0-0tjl8PjKf1o6cyESCwaqSw/exec";
+  const DEPLOYED_WEB_APP_URL =
+  "https://script.google.com/macros/s/AKfycbw6aqArIX_eXtrfBDe5_iiqX-97-Zfwbgt3K_P21P56jP0-0tjl8PjKf1o6cyESCwaqSw/exec";
   let html5QrCode;
   let isProcessing = false;
   let lastScannedCode = "";
   let lastScanTime = 0;
 //for external website to open camera
-  window.onload = function() {
-    loadAttendeeSuggestions();
-    initScanner();
-  };
+window.onload = function() {
+  initScanner();
+};
 
   function playSound(type) {
     try {
@@ -176,11 +176,20 @@
     } catch (e) {}
   }
 
-  function loadAttendeeSuggestions() {
-    if (typeof google !== 'undefined' && google.script && google.script.run) {
-      google.script.run.withSuccessHandler(populateDatalist).getRegisteredAttendees();
-    }
-  }
+// old version
+// function loadAttendeeSuggestions() {
+//   if (typeof google !== 'undefined' && google.script && google.script.run) {
+//     google.script.run.withSuccessHandler(populateDatalist).getRegisteredAttendees();
+//   }
+// }
+
+//modify this
+function loadAttendeeSuggestions() {
+  // Attendee suggestions are temporarily disabled.
+  // The scanner submits the scanned Attendee ID directly
+  // to the Apps Script Web App.
+  console.log("Attendee suggestions disabled in external scanner.");
+}
 
   function populateDatalist(list) {
     const datalist = document.getElementById('attendeesDatalist');
@@ -231,29 +240,63 @@
     processCheckIn(val);
   }
 
-  function processCheckIn(attendeeId) {
-    if (isProcessing) return;
-    isProcessing = true;
+  // modify this
+//   The text/plain request is intentional. Google Apps Script Web Apps commonly require this 
+//   pattern when an external browser page POSTs JSON, because it avoids triggering the browser's 
+//   CORS preflight; Google's Content Service also redirects responses to a googleusercontent.com URL
 
-    const session = document.querySelector('input[name="session"]:checked').value;
-    updateStatus(`⚡ Verifying "${attendeeId}"...`, "idle");
 
-    if (typeof google !== 'undefined' && google.script && google.script.run) {
-      google.script.run
-        .withSuccessHandler(handleResponse)
-        .withFailureHandler(handleError)
-        .processScan(attendeeId, session);
-    } else {
-      fetch(DEPLOYED_WEB_APP_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ attendeeId: attendeeId, session: session })
-      })
-      .then(res => res.json())
-      .then(handleResponse)
-      .catch(handleError);
+function processCheckIn(attendeeId) {
+  if (isProcessing) return;
+
+  isProcessing = true;
+
+  const session = document.querySelector(
+    'input[name="session"]:checked'
+  ).value;
+
+  updateStatus(
+    `⚡ Verifying "${attendeeId}"...`,
+    "idle"
+  );
+
+  fetch(DEPLOYED_WEB_APP_URL, {
+    method: "POST",
+    redirect: "follow",
+    headers: {
+      "Content-Type": "text/plain;charset=utf-8"
+    },
+    body: JSON.stringify({
+      attendeeId: attendeeId,
+      session: session
+    })
+  })
+  .then(response => response.text())
+  .then(text => {
+
+    console.log("Apps Script response:", text);
+
+    let result;
+
+    try {
+      result = JSON.parse(text);
+    } catch (error) {
+      throw new Error(
+        "Invalid response from Google Apps Script: " + text
+      );
     }
-  }
+
+    handleResponse(result);
+
+  })
+  .catch(error => {
+
+    console.error("Check-in error:", error);
+
+    handleError(error);
+
+  });
+}
 
   function handleResponse(res) {
     if (res.status === 'SUCCESS') {
