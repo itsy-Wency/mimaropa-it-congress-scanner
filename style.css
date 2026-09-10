@@ -2392,3 +2392,510 @@ label:focus-visible {
         transition-duration: 0.01ms !important;
     }
 }
+/* =========================================================
+   CODE GREEN EVENT HEADER
+   ========================================================= */
+
+.event-header {
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+
+    background:
+        radial-gradient(
+            circle at 12% 40%,
+            rgba(0, 255, 120, 0.20),
+            transparent 32%
+        ),
+        radial-gradient(
+            circle at 85% 25%,
+            rgba(0, 180, 255, 0.18),
+            transparent 35%
+        ),
+        linear-gradient(
+            135deg,
+            #031b2b 0%,
+            #062c39 45%,
+            #073b32 100%
+        );
+
+    border-bottom: 1px solid rgba(0, 255, 180, 0.18);
+
+    box-shadow:
+        0 10px 35px rgba(0, 0, 0, 0.25);
+
+    z-index: 10;
+}
+
+
+/* =========================================================
+   HEADER INNER
+   ========================================================= */
+
+.header-inner {
+    width: min(1500px, 94%);
+    min-height: 190px;
+
+    margin: 0 auto;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    gap: 40px;
+
+    padding: 24px 0;
+}
+
+
+/* =========================================================
+   LEFT SIDE
+   ========================================================= */
+
+.header-branding {
+    display: flex;
+    flex-direction: column;
+
+    gap: 15px;
+
+    min-width: 0;
+}
+
+
+/* =========================================================
+   ORGANIZATION LOGOS
+   ========================================================= */
+
+.organization-logos {
+    display: flex;
+    align-items: center;
+
+    gap: 24px;
+
+    height: 52px;
+}
+
+.organization-logos img {
+    display: block;
+    object-fit: contain;
+
+    max-height: 52px;
+    width: auto;
+}
+
+
+/* Individual logo sizing */
+
+.dwcc-logo {
+    width: 230px;
+}
+
+.sit-logo {
+    width: 185px;
+}
+
+.jpcs-logo {
+    width: 210px;
+}
+
+
+/* =========================================================
+   EVENT TITLE
+   ========================================================= */
+
+.event-title {
+    display: flex;
+    flex-direction: column;
+
+    gap: 3px;
+}
+
+
+.event-series {
+    font-size: clamp(12px, 1vw, 17px);
+
+    font-weight: 700;
+
+    letter-spacing: 0.08em;
+
+    color: rgba(255, 255, 255, 0.85);
+
+    text-transform: uppercase;
+}
+
+
+.event-title h1 {
+    margin: 0;
+
+    font-size: clamp(38px, 4.2vw, 72px);
+
+    line-height: 0.95;
+
+    font-weight: 900;
+
+    letter-spacing: -0.04em;
+
+    color: #ffffff;
+
+    text-shadow:
+        0 4px 18px rgba(0, 0, 0, 0.35);
+}
+
+
+.event-title h1 span {
+    background:
+        linear-gradient(
+            90deg,
+            #16c7ff,
+            #00e89b,
+            #5cff72
+        );
+
+    -webkit-background-clip: text;
+    background-clip: text;
+
+    -webkit-text-fill-color: transparent;
+}
+
+
+/* =========================================================
+   CODE GREEN THEME
+   ========================================================= */
+
+.event-theme {
+    display: flex;
+    align-items: center;
+
+    flex-wrap: wrap;
+
+    gap: 10px;
+
+    margin-top: 5px;
+}
+
+
+.event-theme strong {
+    display: inline-flex;
+
+    padding: 7px 15px;
+
+    border-radius: 999px;
+
+    color: #ffffff;
+
+    font-size: clamp(12px, 1vw, 15px);
+
+    letter-spacing: 0.04em;
+
+    background:
+        linear-gradient(
+            135deg,
+            rgba(0, 200, 255, 0.18),
+            rgba(0, 255, 150, 0.18)
+        );
+
+    border: 1px solid rgba(0, 255, 180, 0.35);
+
+    box-shadow:
+        inset 0 1px 1px rgba(255, 255, 255, 0.10),
+        0 5px 20px rgba(0, 0, 0, 0.15);
+}
+
+
+.event-theme span {
+    font-size: clamp(10px, 0.9vw, 14px);
+
+    color: rgba(255, 255, 255, 0.68);
+
+    font-weight: 500;
+}
+
+
+/* =========================================================
+   RIGHT EVENT LOGO
+   ========================================================= */
+
+.header-event-logo {
+    flex: 0 0 auto;
+
+    display: flex;
+
+    align-items: center;
+    justify-content: center;
+}
+
+
+.header-event-logo img {
+    width: clamp(170px, 20vw, 330px);
+
+    max-height: 150px;
+
+    object-fit: contain;
+
+    filter:
+        drop-shadow(
+            0 12px 25px rgba(0, 0, 0, 0.35)
+        );
+}
+
+
+/* =========================================================
+   TABLET
+   ========================================================= */
+
+@media (max-width: 1100px) {
+
+    .header-inner {
+        min-height: 165px;
+
+        gap: 25px;
+    }
+
+
+    .organization-logos {
+        gap: 15px;
+    }
+
+
+    .organization-logos img {
+        max-height: 42px;
+    }
+
+
+    .dwcc-logo {
+        width: 180px;
+    }
+
+
+    .sit-logo {
+        width: 145px;
+    }
+
+
+    .jpcs-logo {
+        width: 165px;
+    }
+
+
+    .header-event-logo img {
+        width: 220px;
+        max-height: 125px;
+    }
+
+}
+
+
+/* =========================================================
+   TABLET / SMALL LAPTOP
+   ========================================================= */
+
+@media (max-width: 850px) {
+
+    .header-inner {
+        min-height: 145px;
+
+        padding: 20px 0;
+    }
+
+
+    .organization-logos {
+        height: 36px;
+
+        gap: 12px;
+    }
+
+
+    .organization-logos img {
+        max-height: 36px;
+    }
+
+
+    .dwcc-logo {
+        width: 150px;
+    }
+
+
+    .sit-logo {
+        width: 120px;
+    }
+
+
+    .jpcs-logo {
+        width: 135px;
+    }
+
+
+    .header-event-logo img {
+        width: 170px;
+        max-height: 105px;
+    }
+
+}
+
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 700px) {
+
+    .header-inner {
+        width: 92%;
+
+        min-height: auto;
+
+        padding: 18px 0;
+
+        gap: 15px;
+
+        flex-direction: column;
+
+        align-items: stretch;
+    }
+
+
+    .header-branding {
+        align-items: center;
+
+        text-align: center;
+    }
+
+
+    .organization-logos {
+        width: 100%;
+
+        height: auto;
+
+        justify-content: center;
+
+        flex-wrap: wrap;
+
+        gap: 12px;
+    }
+
+
+    .organization-logos img {
+        max-height: 32px;
+    }
+
+
+    .dwcc-logo {
+        width: 130px;
+    }
+
+
+    .sit-logo {
+        width: 105px;
+    }
+
+
+    .jpcs-logo {
+        width: 115px;
+    }
+
+
+    .event-title {
+        align-items: center;
+    }
+
+
+    .event-series {
+        font-size: 10px;
+
+        letter-spacing: 0.06em;
+    }
+
+
+    .event-title h1 {
+        font-size: clamp(32px, 10vw, 48px);
+    }
+
+
+    .event-theme {
+        justify-content: center;
+
+        flex-direction: column;
+
+        gap: 5px;
+    }
+
+
+    .event-theme strong {
+        font-size: 11px;
+
+        padding: 6px 12px;
+    }
+
+
+    .event-theme span {
+        font-size: 9px;
+
+        line-height: 1.4;
+    }
+
+
+    .header-event-logo {
+        order: -1;
+    }
+
+
+    .header-event-logo img {
+        width: 130px;
+
+        max-height: 75px;
+    }
+
+}
+
+
+/* =========================================================
+   VERY SMALL PHONES
+   ========================================================= */
+
+@media (max-width: 400px) {
+
+    .header-inner {
+        padding: 14px 0;
+    }
+
+
+    .organization-logos {
+        gap: 7px;
+    }
+
+
+    .organization-logos img {
+        max-height: 27px;
+    }
+
+
+    .dwcc-logo {
+        width: 105px;
+    }
+
+
+    .sit-logo {
+        width: 90px;
+    }
+
+
+    .jpcs-logo {
+        width: 100px;
+    }
+
+
+    .header-event-logo img {
+        width: 110px;
+    }
+
+
+    .event-title h1 {
+        font-size: 30px;
+    }
+
+
+    .event-theme span {
+        max-width: 280px;
+    }
+
+}
