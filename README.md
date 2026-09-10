@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="code-green-header.svg" alt="CODE GREEN 2026 — 8th MIMAROPA Regional IT Congress" width="100%">
+<img src="assets/code-green-header.svg" alt="CODE GREEN 2026 — 8th MIMAROPA Regional IT Congress" width="100%">
 
 <br>
 
