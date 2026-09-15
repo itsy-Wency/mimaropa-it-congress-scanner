@@ -10,7 +10,7 @@
 ========================================================= */
 
 const DEPLOYED_WEB_APP_URL =
-    "https://script.google.com/macros/s/AKfycbyLseZj1D40TxYwQXd87Kbcj78Zqhp8kKljXEwciCuFXlJXtGw_li5FmsxAcWyQeKr1Hw/exec";
+    "https://script.google.com/macros/s/AKfycbw6aqArIX_eXtrfBDe5_iiqX-97-Zfwbgt3K_P21P56jP0-0tjl8PjKf1o6cyESCwaqSw/exec";
 
 
 /* =========================================================
@@ -818,59 +818,11 @@ function handleResponse(res) {
             .trim();
 
 
-    /*
-       BULK DATA MAY COME FROM THE BACKEND AS:
-       1. top-level fields (school/headcount/free), OR
-       2. a nested bulkInfo object.
-
-       Accept both formats so the frontend remains compatible with
-       the current Apps Script response.
-    */
-    const backendBulkInfo =
-        data.bulkInfo && typeof data.bulkInfo === "object"
-            ? data.bulkInfo
-            : data;
-
     const school =
         String(
-            data.school ||
-            backendBulkInfo.school ||
-            data.schoolName ||
-            ""
-        ).trim();
-
-    const overrideBulkFlag =
-        data.isBulk === true ||
-        String(data.isBulk || "").toLowerCase() === "true" ||
-        backendBulkInfo.isBulk === true ||
-        String(backendBulkInfo.isBulk || "").toLowerCase() === "true" ||
-        String(data.attendeeId || attendeeId || "").toUpperCase().startsWith("ATT-BLK-");
-
-    const overrideBulkInfo = overrideBulkFlag
-        ? {
-            isBulk: true,
-            school: school,
-            headcount: Number(
-                data.headcount ??
-                backendBulkInfo.headcount ??
-                0
-            ),
-            free: Number(
-                data.free ??
-                backendBulkInfo.free ??
-                0
-            ),
-            payingParticipants: Number(
-                data.payingParticipants ??
-                backendBulkInfo.payingParticipants ??
-                Math.max(
-                    Number(data.headcount ?? backendBulkInfo.headcount ?? 0) -
-                    Number(data.free ?? backendBulkInfo.free ?? 0),
-                    0
-                )
-            )
-        }
-        : null;
+            data.school || ""
+        )
+            .trim();
 
 
     const timestamp =
@@ -894,8 +846,6 @@ function handleResponse(res) {
         data.isBulk === true ||
         String(data.isBulk || "").toLowerCase() === "true" ||
         String(data.isBulk || "") === "1" ||
-        backendBulkInfo.isBulk === true ||
-        String(backendBulkInfo.isBulk || "").toLowerCase() === "true" ||
         String(data.attendeeId || "").toUpperCase().startsWith("ATT-BLK-");
 
     const bulkInfo =
@@ -903,34 +853,30 @@ function handleResponse(res) {
             ? {
                 isBulk: true,
 
-                school: String(
-                    data.school ||
-                    backendBulkInfo.school ||
-                    data.schoolName ||
-                    ""
-                ).trim(),
+                school:
+                    String(
+                        data.school || ""
+                    ).trim(),
 
-                headcount: Number(
-                    data.headcount ??
-                    backendBulkInfo.headcount ??
-                    0
-                ),
+                headcount:
+                    Number(
+                        data.headcount || 0
+                    ),
 
-                free: Number(
-                    data.free ??
-                    backendBulkInfo.free ??
-                    0
-                ),
+                free:
+                    Number(
+                        data.free || 0
+                    ),
 
-                payingParticipants: Number(
-                    data.payingParticipants ??
-                    backendBulkInfo.payingParticipants ??
-                    Math.max(
-                        Number(data.headcount ?? backendBulkInfo.headcount ?? 0) -
-                        Number(data.free ?? backendBulkInfo.free ?? 0),
-                        0
+                payingParticipants:
+                    Number(
+                        data.payingParticipants ??
+                        Math.max(
+                            Number(data.headcount || 0) -
+                            Number(data.free || 0),
+                            0
+                        )
                     )
-                )
             }
             : null;
 
@@ -942,12 +888,7 @@ function handleResponse(res) {
             name: name,
             attendeeId: attendeeId,
             timestamp: timestamp,
-            message: message,
-            school: school,
-            isBulk: bulkFlag,
-            headcount: bulkInfo ? bulkInfo.headcount : null,
-            payingParticipants: bulkInfo ? bulkInfo.payingParticipants : null,
-            free: bulkInfo ? bulkInfo.free : null
+            message: message
         }
     );
 
@@ -1430,16 +1371,12 @@ function showResultModal(
     const modalMessage =
         document.getElementById("modalMessage");
 
-    /* Individual school display. The actual value comes from
-       Individual Attendees / Group_Bulk Attendees Column F. */
+    /* Individual school block (used only for individual registrations). */
     const individualSchool =
         modalElement.querySelector(".individual-school");
 
     const individualModalSchool =
         document.getElementById("individualModalSchool");
-
-    const individualSchoolLabel =
-        modalElement.querySelector(".individual-school-label");
 
 
     /* BULK REGISTRATION MODAL ELEMENTS */
@@ -1580,21 +1517,115 @@ function showResultModal(
     }
 
     /* ---------------------------------------------------------
-       REGISTRATION-SPECIFIC INFORMATION
+       BULK REGISTRATION SUMMARY
     --------------------------------------------------------- */
 
-    if (bulkRegistrationInfo && bulkInfo && bulkInfo.isBulk === true) {
+    if (
+        bulkRegistrationInfo &&
+        bulkInfo &&
+        bulkInfo.isBulk === true
+    ) {
 
-        /* BULK: restore the previous working summary. */
+        /* Show ONLY the previous working bulk summary. */
         bulkRegistrationInfo.style.display = "block";
 
+        /* Bulk registrations use the bulk summary school field. */
         if (individualSchool) {
             individualSchool.style.display = "none";
         }
 
+        /* -----------------------------------------------------
+           BULK SCHOOL DISPLAY
+           Show the actual School value from Group_Bulk Attendees
+           Column F directly under the Registration Summary title.
+           This is created dynamically so it works even when the
+           existing HTML does not contain a visible school element.
+        ----------------------------------------------------- */
+        const bulkSchoolValue =
+            String(bulkInfo.school || "").trim() || "School Not Specified";
+
+        /* Remove a previously-created school display before
+           creating/updating it. This prevents duplicates when
+           multiple QR scans are performed. */
+        const oldBulkSchoolDisplay =
+            modalElement.querySelector("#bulkModalSchoolDisplay");
+
+        if (oldBulkSchoolDisplay) {
+            oldBulkSchoolDisplay.remove();
+        }
+
+        const bulkSchoolDisplay =
+            document.createElement("div");
+
+        bulkSchoolDisplay.id =
+            "bulkModalSchoolDisplay";
+
+        bulkSchoolDisplay.textContent =
+            bulkSchoolValue;
+
+        /* Match the existing modal design without requiring a CSS edit. */
+        bulkSchoolDisplay.style.display = "block";
+        bulkSchoolDisplay.style.width = "100%";
+        bulkSchoolDisplay.style.textAlign = "center";
+        bulkSchoolDisplay.style.fontWeight = "700";
+        bulkSchoolDisplay.style.fontSize = "1.05rem";
+        bulkSchoolDisplay.style.lineHeight = "1.3";
+        bulkSchoolDisplay.style.margin = "6px 0 14px";
+        bulkSchoolDisplay.style.padding = "0 10px";
+        bulkSchoolDisplay.style.wordBreak = "break-word";
+
+        /* Find the visible Registration Summary heading and put the
+           school immediately below it. */
+        let summaryHeading = null;
+
+        bulkRegistrationInfo
+            .querySelectorAll("h1, h2, h3, h4, h5, h6, div, span, p")
+            .forEach(element => {
+                if (summaryHeading) return;
+
+                const text =
+                    String(element.textContent || "")
+                        .replace(/\s+/g, " ")
+                        .trim()
+                        .toUpperCase();
+
+                if (
+                    text === "REGISTRATION SUMMARY" ||
+                    text === "BULK REGISTRATION"
+                ) {
+                    summaryHeading = element;
+                }
+            });
+
+        if (summaryHeading) {
+            summaryHeading.insertAdjacentElement(
+                "afterend",
+                bulkSchoolDisplay
+            );
+        } else {
+            /* Safe fallback: place it at the top of the summary box. */
+            bulkRegistrationInfo.prepend(
+                bulkSchoolDisplay
+            );
+        }
+
+        /* Keep the existing modalSchool element synchronized if it
+           exists, but hide it so the school is displayed only once. */
+        if (modalSchool) {
+            modalSchool.textContent = bulkSchoolValue;
+            modalSchool.style.display = "none";
+        }
+
+        const bulkSchoolLabel =
+            bulkRegistrationInfo.querySelector(".bulk-school .bulk-label");
+
+        if (bulkSchoolLabel) {
+            bulkSchoolLabel.textContent = "BULK REGISTRATION";
+        }
+
         if (modalSchool) {
             modalSchool.textContent =
-                String(bulkInfo.school || "").trim() || "-";
+                bulkInfo.school || "School Not Specified";
         }
 
         if (modalHeadcount) {
@@ -1603,13 +1634,8 @@ function showResultModal(
         }
 
         if (modalPaying) {
-            const headcount = Number(bulkInfo.headcount || 0);
-            const free = Number(bulkInfo.free || 0);
             modalPaying.textContent =
-                Number(
-                    bulkInfo.payingParticipants ??
-                    Math.max(headcount - free, 0)
-                ).toLocaleString();
+                Number(bulkInfo.payingParticipants || 0).toLocaleString();
         }
 
         if (modalFree) {
@@ -1617,111 +1643,49 @@ function showResultModal(
                 Number(bulkInfo.free || 0).toLocaleString();
         }
 
-        /*
-           BULK MUST NOT SHOW THE OLD GENERIC
-           "SCHOOL / ORGANIZATION" PLACEHOLDER.
+        /* Remove any duplicate generic placeholder outside the bulk box. */
+        const modalContent =
+            modalElement.querySelector(".modal-content");
 
-           Only hide exact placeholder elements outside the bulk
-           summary. The actual school inside #bulkRegistrationInfo
-           is preserved and populated from Group_Bulk Attendees!F.
-        */
-        modalElement.querySelectorAll(".individual-school").forEach(el => {
-            el.style.display = "none";
-        });
+        if (modalContent) {
+            modalContent.querySelectorAll("*").forEach(element => {
+                if (bulkRegistrationInfo.contains(element)) {
+                    return;
+                }
 
-        modalElement.querySelectorAll("*").forEach(el => {
-            if (bulkRegistrationInfo.contains(el)) return;
+                const text =
+                    String(element.textContent || "")
+                        .replace(/\s+/g, " ")
+                        .trim()
+                        .toUpperCase();
 
-            const text = String(el.textContent || "")
-                .replace(/\s+/g, " ")
-                .trim()
-                .toUpperCase();
+                if (
+                    text === "SCHOOL / ORGANIZATION" ||
+                    text === "SCHOOL / ORGANIZATION -"
+                ) {
+                    element.style.display = "none";
+                }
+            });
+        }
 
-            if (
-                text === "SCHOOL / ORGANIZATION" ||
-                text === "SCHOOL / ORGANIZATION -"
-            ) {
-                el.style.display = "none";
-            }
-        });
+    }
 
-    } else {
+    else {
 
-        /* INDIVIDUAL: show the actual School value returned from
-           Column F. Never display the literal placeholder
-           "SCHOOL / ORGANIZATION". */
+        /* Individual registration: display the actual School value from Column F. */
         if (bulkRegistrationInfo) {
             bulkRegistrationInfo.style.display = "none";
         }
 
-        const actualSchool =
-            String(school || "").trim();
-
         if (individualSchool) {
-            individualSchool.style.display = actualSchool ? "block" : "none";
+            individualSchool.style.display = "block";
         }
-
-        if (individualSchoolLabel) {
-            /* Remove the old generic placeholder label completely. */
-            individualSchoolLabel.style.display = "none";
-        }
-
-        /* Hide any remaining exact generic placeholder outside the
-           actual school-value element. */
-        modalElement.querySelectorAll("*").forEach(el => {
-            const text = String(el.textContent || "")
-                .replace(/\s+/g, " ")
-                .trim()
-                .toUpperCase();
-
-            if (
-                text === "SCHOOL / ORGANIZATION" ||
-                text === "SCHOOL / ORGANIZATION -"
-            ) {
-                if (el !== individualModalSchool) {
-                    el.style.display = "none";
-                }
-            }
-        });
 
         if (individualModalSchool) {
-            individualModalSchool.textContent = actualSchool || "-";
+            individualModalSchool.textContent =
+                String(school || "").trim() || "-";
         }
 
-        /* If an older HTML version has no individual-school block,
-           create one immediately after the attendee name. */
-        if (!individualSchool && actualSchool && modalName) {
-            let fallbackSchool =
-                modalElement.querySelector("#fallbackIndividualSchool");
-
-            if (!fallbackSchool) {
-                fallbackSchool = document.createElement("div");
-                fallbackSchool.id = "fallbackIndividualSchool";
-                fallbackSchool.className = "individual-school";
-                fallbackSchool.style.marginTop = "4px";
-                fallbackSchool.style.textAlign = "center";
-                fallbackSchool.innerHTML =
-                    '<strong id="fallbackIndividualSchoolValue"></strong>';
-                modalName.insertAdjacentElement("afterend", fallbackSchool);
-            }
-
-            const fallbackValue =
-                fallbackSchool.querySelector("#fallbackIndividualSchoolValue");
-
-            if (fallbackValue) {
-                fallbackValue.textContent = actualSchool;
-            }
-
-            fallbackSchool.style.display = "block";
-        }
-
-        /* Remove any stale fallback created by an older scan state. */
-        const staleFallback =
-            modalElement.querySelector("#fallbackIndividualSchool");
-
-        if (!actualSchool && staleFallback) {
-            staleFallback.style.display = "none";
-        }
     }
 
 
@@ -2319,7 +2283,7 @@ function handleOverrideResponse(
             attendeeId,
             safeTimestamp,
             message,
-            overrideBulkInfo,
+            null,
             school
         );
 
