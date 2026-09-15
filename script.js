@@ -818,26 +818,56 @@ function handleResponse(res) {
             .trim();
 
 
+    /*
+       BULK DATA MAY COME FROM THE BACKEND AS:
+       1. top-level fields (school/headcount/free), OR
+       2. a nested bulkInfo object.
+
+       Accept both formats so the frontend remains compatible with
+       the current Apps Script response.
+    */
+    const backendBulkInfo =
+        data.bulkInfo && typeof data.bulkInfo === "object"
+            ? data.bulkInfo
+            : data;
+
     const school =
         String(
-            data.school || ""
-        )
-            .trim();
+            data.school ||
+            backendBulkInfo.school ||
+            data.schoolName ||
+            ""
+        ).trim();
 
     const overrideBulkFlag =
         data.isBulk === true ||
         String(data.isBulk || "").toLowerCase() === "true" ||
+        backendBulkInfo.isBulk === true ||
+        String(backendBulkInfo.isBulk || "").toLowerCase() === "true" ||
         String(data.attendeeId || attendeeId || "").toUpperCase().startsWith("ATT-BLK-");
 
     const overrideBulkInfo = overrideBulkFlag
         ? {
             isBulk: true,
             school: school,
-            headcount: Number(data.headcount || 0),
-            free: Number(data.free || 0),
+            headcount: Number(
+                data.headcount ??
+                backendBulkInfo.headcount ??
+                0
+            ),
+            free: Number(
+                data.free ??
+                backendBulkInfo.free ??
+                0
+            ),
             payingParticipants: Number(
                 data.payingParticipants ??
-                Math.max(Number(data.headcount || 0) - Number(data.free || 0), 0)
+                backendBulkInfo.payingParticipants ??
+                Math.max(
+                    Number(data.headcount ?? backendBulkInfo.headcount ?? 0) -
+                    Number(data.free ?? backendBulkInfo.free ?? 0),
+                    0
+                )
             )
         }
         : null;
@@ -864,6 +894,8 @@ function handleResponse(res) {
         data.isBulk === true ||
         String(data.isBulk || "").toLowerCase() === "true" ||
         String(data.isBulk || "") === "1" ||
+        backendBulkInfo.isBulk === true ||
+        String(backendBulkInfo.isBulk || "").toLowerCase() === "true" ||
         String(data.attendeeId || "").toUpperCase().startsWith("ATT-BLK-");
 
     const bulkInfo =
@@ -871,30 +903,34 @@ function handleResponse(res) {
             ? {
                 isBulk: true,
 
-                school:
-                    String(
-                        data.school || ""
-                    ).trim(),
+                school: String(
+                    data.school ||
+                    backendBulkInfo.school ||
+                    data.schoolName ||
+                    ""
+                ).trim(),
 
-                headcount:
-                    Number(
-                        data.headcount || 0
-                    ),
+                headcount: Number(
+                    data.headcount ??
+                    backendBulkInfo.headcount ??
+                    0
+                ),
 
-                free:
-                    Number(
-                        data.free || 0
-                    ),
+                free: Number(
+                    data.free ??
+                    backendBulkInfo.free ??
+                    0
+                ),
 
-                payingParticipants:
-                    Number(
-                        data.payingParticipants ??
-                        Math.max(
-                            Number(data.headcount || 0) -
-                            Number(data.free || 0),
-                            0
-                        )
+                payingParticipants: Number(
+                    data.payingParticipants ??
+                    backendBulkInfo.payingParticipants ??
+                    Math.max(
+                        Number(data.headcount ?? backendBulkInfo.headcount ?? 0) -
+                        Number(data.free ?? backendBulkInfo.free ?? 0),
+                        0
                     )
+                )
             }
             : null;
 
@@ -906,7 +942,12 @@ function handleResponse(res) {
             name: name,
             attendeeId: attendeeId,
             timestamp: timestamp,
-            message: message
+            message: message,
+            school: school,
+            isBulk: bulkFlag,
+            headcount: bulkInfo ? bulkInfo.headcount : null,
+            payingParticipants: bulkInfo ? bulkInfo.payingParticipants : null,
+            free: bulkInfo ? bulkInfo.free : null
         }
     );
 
@@ -1576,10 +1617,32 @@ function showResultModal(
                 Number(bulkInfo.free || 0).toLocaleString();
         }
 
-        /* Hide only the OLD generic individual school placeholder.
-           Do not touch the school field inside the bulk summary. */
+        /*
+           BULK MUST NOT SHOW THE OLD GENERIC
+           "SCHOOL / ORGANIZATION" PLACEHOLDER.
+
+           Only hide exact placeholder elements outside the bulk
+           summary. The actual school inside #bulkRegistrationInfo
+           is preserved and populated from Group_Bulk Attendees!F.
+        */
         modalElement.querySelectorAll(".individual-school").forEach(el => {
             el.style.display = "none";
+        });
+
+        modalElement.querySelectorAll("*").forEach(el => {
+            if (bulkRegistrationInfo.contains(el)) return;
+
+            const text = String(el.textContent || "")
+                .replace(/\s+/g, " ")
+                .trim()
+                .toUpperCase();
+
+            if (
+                text === "SCHOOL / ORGANIZATION" ||
+                text === "SCHOOL / ORGANIZATION -"
+            ) {
+                el.style.display = "none";
+            }
         });
 
     } else {
@@ -1599,9 +1662,27 @@ function showResultModal(
         }
 
         if (individualSchoolLabel) {
-            /* Remove the placeholder label completely. */
+            /* Remove the old generic placeholder label completely. */
             individualSchoolLabel.style.display = "none";
         }
+
+        /* Hide any remaining exact generic placeholder outside the
+           actual school-value element. */
+        modalElement.querySelectorAll("*").forEach(el => {
+            const text = String(el.textContent || "")
+                .replace(/\s+/g, " ")
+                .trim()
+                .toUpperCase();
+
+            if (
+                text === "SCHOOL / ORGANIZATION" ||
+                text === "SCHOOL / ORGANIZATION -"
+            ) {
+                if (el !== individualModalSchool) {
+                    el.style.display = "none";
+                }
+            }
+        });
 
         if (individualModalSchool) {
             individualModalSchool.textContent = actualSchool || "-";
