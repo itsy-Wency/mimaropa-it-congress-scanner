@@ -271,6 +271,79 @@ function processGroupSubmission(sourceSheet, row) {
   ]]);
 
   SpreadsheetApp.flush();
+  // =====================================================
+// NEW FEATURE: BULK HEADCOUNT + FREE REGISTRATION
+// =====================================================
+
+try {
+
+  // Column D of Form Responses 2 contains
+  // the uploaded Excel file link.
+  const excelFileUrl =
+    sourceSheet.getRange(row, 4).getValue();
+
+  if (excelFileUrl) {
+
+    const bulkStats =
+      calculateBulkRegistration(
+        excelFileUrl
+      );
+
+    // Column M = HEADCOUNT
+    // Column N = FREE
+    targetSheet
+      .getRange(targetRow, 13, 1, 2)
+      .setValues([[
+        bulkStats.headcount,
+        bulkStats.free
+      ]]);
+
+    console.log(
+      "BULK HEADCOUNT UPDATED"
+    );
+
+    console.log(
+      "Group Row: " +
+      targetRow
+    );
+
+    console.log(
+      "HEADCOUNT: " +
+      bulkStats.headcount
+    );
+
+    console.log(
+      "FREE: " +
+      bulkStats.free
+    );
+
+  } else {
+
+    console.log(
+      "No Excel upload found for bulk registration."
+    );
+
+  }
+
+} catch (headcountError) {
+
+  /*
+   * IMPORTANT:
+   *
+   * This feature must NOT break the existing
+   * registration process.
+   *
+   * If headcount calculation fails,
+   * the existing registration, QR generation,
+   * and email process will continue.
+   */
+
+  console.error(
+    "Bulk headcount calculation failed: " +
+    headcountError
+  );
+
+}
 
   if (email && email.includes("@")) {
     sendQrEmail(email, primaryName, uniqueId, qrUrl, true);
@@ -378,15 +451,30 @@ function processScan(attendeeId, session) {
 
 
     // Check Group Attendees
-    res = checkAndRecordStation(
-      ss.getSheetByName("Group_Bulk Attendees"),
-      cleanId,
-      sessionType
-    );
+// Check Group Attendees
+  const groupSheet =
+    ss.getSheetByName("Group_Bulk Attendees");
 
-    if (res.found) {
-      return res.result;
-    }
+  res = checkAndRecordStation(
+    groupSheet,
+    cleanId,
+    sessionType
+  );
+
+  if (res.found) {
+
+    // Additional information for bulk/group registration
+    const bulkInfo =
+      getBulkRegistrationInfo(
+        groupSheet,
+        cleanId
+      );
+
+    return {
+      ...res.result,
+      ...(bulkInfo || {})
+    };
+  }
 
 
     // Attendee not found
@@ -451,6 +539,7 @@ function checkAndRecordStation(sheet, targetId, sessionType) {
 
   const attendeeId = String(rowData[0] || "").trim();
   const name = String(rowData[1] || "").trim();
+  const school = String(rowData[5] || "").trim();
 
   const attStatus = String(rowData[6] || "").toUpperCase();
   const attTime   = String(rowData[7] || "");
@@ -504,6 +593,7 @@ function checkAndRecordStation(sheet, targetId, sessionType) {
         displayStatus: "Scan Successfully",
         name: name,
         attendeeId: attendeeId,
+        school: school,
         timestamp: timestamp,
         message: "Attendance recorded successfully."
       }
@@ -1643,4 +1733,2154 @@ function include(filename) {
   return HtmlService
     .createHtmlOutputFromFile(filename)
     .getContent();
+}
+// for bulk head count feature
+function include(filename) {
+  return HtmlService
+    .createHtmlOutputFromFile(filename)
+    .getContent();
+}
+
+
+/**
+ * ==========================================================
+ * NEW FEATURE:
+ * BULK REGISTRATION HEADCOUNT CALCULATOR
+ * ==========================================================
+ *
+ * This function ONLY reads the uploaded Excel file.
+ *
+ * It does NOT:
+ * - create attendee IDs
+ * - modify attendance
+ * - modify snacks
+ * - send emails
+ * - modify existing attendee records
+ *
+ * Excel structure:
+ * Rows 1-4 = Header / instructions
+ * Row 5+   = Participant records
+ */
+function calculateBulkRegistration(fileUrl) {
+
+  const HEADER_ROWS = 4;
+
+  // --------------------------------------------------------
+  // 1. Extract Drive File ID from uploaded file URL
+  // --------------------------------------------------------
+
+  const fileIdMatch = String(fileUrl)
+    .match(/[-\w]{25,}/);
+
+  if (!fileIdMatch) {
+    throw new Error(
+      "Unable to extract the Excel file ID from the uploaded file link."
+    );
+  }
+
+  const fileId = fileIdMatch[0];
+
+
+  // --------------------------------------------------------
+  // 2. Get uploaded Excel file
+  // --------------------------------------------------------
+
+  const file = DriveApp.getFileById(fileId);
+  const blob = file.getBlob();
+
+
+  // --------------------------------------------------------
+  // 3. Temporarily convert Excel to Google Sheets
+  // --------------------------------------------------------
+
+  const tempFile = Drive.Files.create(
+    {
+      name: "TEMP_BULK_HEADCOUNT_" + new Date().getTime(),
+      mimeType: MimeType.GOOGLE_SHEETS
+    },
+    blob
+  );
+
+
+  try {
+
+    // ------------------------------------------------------
+    // 4. Open converted spreadsheet
+    // ------------------------------------------------------
+
+    const tempSpreadsheet =
+      SpreadsheetApp.openById(tempFile.id);
+
+
+    // ------------------------------------------------------
+    // 5. Open Masterlist sheet
+    // ------------------------------------------------------
+
+    const sheet =
+      tempSpreadsheet.getSheetByName("Masterlist");
+
+    if (!sheet) {
+      throw new Error(
+        'The uploaded Excel file does not contain a "Masterlist" sheet.'
+      );
+    }
+
+
+    // ------------------------------------------------------
+    // 6. Determine actual used range
+    // ------------------------------------------------------
+
+    const lastRow = sheet.getLastRow();
+    const lastColumn = sheet.getLastColumn();
+
+
+    // ------------------------------------------------------
+    // 7. No participant data
+    // ------------------------------------------------------
+
+    if (lastRow <= HEADER_ROWS) {
+
+      return {
+        headcount: 0,
+        free: 0
+      };
+
+    }
+
+
+    // ------------------------------------------------------
+    // 8. Read ONLY Row 5 onward
+    // ------------------------------------------------------
+
+    const participantData =
+      sheet.getRange(
+        HEADER_ROWS + 1,
+        1,
+        lastRow - HEADER_ROWS,
+        lastColumn
+      ).getValues();
+
+
+    // ------------------------------------------------------
+    // 9. Count actual participant rows
+    // ------------------------------------------------------
+
+    let headcount = 0;
+
+    participantData.forEach(function(row) {
+
+      /*
+       * Based on your Excel template:
+       *
+       * Column A = FIRST NAME
+       * Column B = LAST NAME
+       * Column C = MIDDLE INITIAL
+       * Column D = ACTIVE EMAIL ADDRESS
+       */
+
+      const firstName =
+        String(row[0] || "").trim();
+
+      const lastName =
+        String(row[1] || "").trim();
+
+      const email =
+        String(row[3] || "").trim();
+
+
+      /*
+       * A row is considered a participant
+       * when it contains participant information.
+       */
+
+      if (
+        firstName ||
+        lastName ||
+        email
+      ) {
+        headcount++;
+      }
+
+    });
+
+
+    // ------------------------------------------------------
+    // 10. Calculate free registrations
+    // ------------------------------------------------------
+
+    const free =
+      Math.floor(headcount / 30);
+
+
+    // ------------------------------------------------------
+    // 11. Return result
+    // ------------------------------------------------------
+
+    return {
+      headcount: headcount,
+      free: free
+    };
+
+
+  } finally {
+
+    // ------------------------------------------------------
+    // 12. Delete temporary converted spreadsheet
+    // ------------------------------------------------------
+
+    try {
+
+      Drive.Files.remove(tempFile.id);
+
+    } catch (cleanupError) {
+
+      console.log(
+        "Temporary file cleanup failed: " +
+        cleanupError
+      );
+
+    }
+
+  }
+
+}
+/**
+ * ==========================================================
+ * TEST ONLY
+ * ==========================================================
+ *
+ * Reads the latest submission from Form Responses 2,
+ * gets the Excel link from Column D,
+ * calculates HEADCOUNT and FREE,
+ * and writes NOTHING to the spreadsheet.
+ *
+ * This is safe to run during testing.
+ */
+function testBulkHeadcount() {
+
+  const ss = getSpreadsheet();
+
+  const sourceSheet =
+    ss.getSheetByName("Form Responses 2");
+
+  if (!sourceSheet) {
+    throw new Error(
+      'Sheet "Form Responses 2" was not found.'
+    );
+  }
+
+
+  // Get latest response row
+  const lastRow =
+    sourceSheet.getLastRow();
+
+  if (lastRow < 2) {
+    throw new Error(
+      "There are no form submissions to test."
+    );
+  }
+
+
+  // --------------------------------------------------------
+  // Column D = uploaded Excel file
+  // --------------------------------------------------------
+
+  const excelFileUrl =
+    sourceSheet
+      .getRange(lastRow, 4)
+      .getValue();
+
+
+  if (!excelFileUrl) {
+    throw new Error(
+      "Column D of the latest Form Responses 2 submission is empty."
+    );
+  }
+
+
+  console.log(
+    "========================================"
+  );
+
+  console.log(
+    "BULK HEADCOUNT TEST"
+  );
+
+  console.log(
+    "Form Response Row: " + lastRow
+  );
+
+  console.log(
+    "Excel URL: " + excelFileUrl
+  );
+
+
+  // --------------------------------------------------------
+  // Calculate
+  // --------------------------------------------------------
+
+  const result =
+    calculateBulkRegistration(
+      excelFileUrl
+    );
+
+
+  // --------------------------------------------------------
+  // Display result in Execution Log
+  // --------------------------------------------------------
+
+  console.log(
+    "HEADCOUNT: " +
+    result.headcount
+  );
+
+  console.log(
+    "FREE: " +
+    result.free
+  );
+
+  console.log(
+    "========================================"
+  );
+
+
+  return result;
+
+}
+
+/**
+ * ==========================================================
+ * ONE-TIME BACKFILL
+ * ==========================================================
+ *
+ * Updates existing Group_Bulk Attendees records.
+ *
+ * ONLY updates:
+ * M = HEADCOUNT
+ * N = FREE
+ *
+ * It does NOT modify:
+ * - Attendee ID
+ * - Name
+ * - Email
+ * - Attendance
+ * - AM Snack
+ * - PM Snack
+ * - QR
+ * - Email
+ */
+function backfillBulkHeadcount() {
+
+  const ss = getSpreadsheet();
+
+  const responseSheet =
+    ss.getSheetByName("Form Responses 2");
+
+  const groupSheet =
+    ss.getSheetByName("Group_Bulk Attendees");
+
+
+  if (!responseSheet) {
+    throw new Error(
+      'Sheet "Form Responses 2" was not found.'
+    );
+  }
+
+  if (!groupSheet) {
+    throw new Error(
+      'Sheet "Group_Bulk Attendees" was not found.'
+    );
+  }
+
+
+  // ========================================================
+  // GET FORM RESPONSES
+  // ========================================================
+
+  const responseLastRow =
+    responseSheet.getLastRow();
+
+
+  if (responseLastRow < 2) {
+
+    console.log(
+      "No Form Responses 2 records found."
+    );
+
+    return;
+
+  }
+
+
+  /*
+   * Form Responses 2:
+   *
+   * B = Email Address
+   * D = Uploaded Excel
+   */
+
+  const responseData =
+    responseSheet
+      .getRange(
+        2,
+        1,
+        responseLastRow - 1,
+        responseSheet.getLastColumn()
+      )
+      .getValues();
+
+
+  // ========================================================
+  // GET GROUP ATTENDEES
+  // ========================================================
+
+  const groupLastRow =
+    groupSheet.getLastRow();
+
+
+  if (groupLastRow < 2) {
+
+    console.log(
+      "No Group_Bulk Attendees records found."
+    );
+
+    return;
+
+  }
+
+
+  /*
+   * Group_Bulk Attendees:
+   *
+   * D = Email
+   * M = HEADCOUNT
+   * N = FREE
+   */
+
+  const groupData =
+    groupSheet
+      .getRange(
+        2,
+        1,
+        groupLastRow - 1,
+        14
+      )
+      .getValues();
+
+
+  let updatedCount = 0;
+
+
+  // ========================================================
+  // PROCESS EACH GROUP RECORD
+  // ========================================================
+
+  groupData.forEach(
+    function(groupRowData, index) {
+
+      const sheetRow =
+        index + 2;
+
+
+      // Group attendee email = Column D
+      const groupEmail =
+        String(
+          groupRowData[3] || ""
+        )
+          .trim()
+          .toLowerCase();
+
+
+      if (!groupEmail) {
+
+        console.log(
+          "Row " +
+          sheetRow +
+          ": No email found. Skipping."
+        );
+
+        return;
+
+      }
+
+
+      // ====================================================
+      // FIND MATCHING FORM RESPONSE
+      // ====================================================
+
+      let matchingResponse = null;
+
+
+      for (
+        let i = 0;
+        i < responseData.length;
+        i++
+      ) {
+
+        const responseEmail =
+          String(
+            responseData[i][1] || ""
+          )
+            .trim()
+            .toLowerCase();
+
+
+        if (
+          responseEmail === groupEmail
+        ) {
+
+          matchingResponse =
+            responseData[i];
+
+          break;
+
+        }
+
+      }
+
+
+      if (!matchingResponse) {
+
+        console.log(
+          "Row " +
+          sheetRow +
+          ": No matching form response found for " +
+          groupEmail
+        );
+
+        return;
+
+      }
+
+
+      // ====================================================
+      // COLUMN D OF FORM RESPONSES 2
+      // ====================================================
+
+      const excelFileUrl =
+        String(
+          matchingResponse[3] || ""
+        )
+          .trim();
+
+
+      if (!excelFileUrl) {
+
+        console.log(
+          "Row " +
+          sheetRow +
+          ": No Excel file found."
+        );
+
+        return;
+
+      }
+
+
+      // ====================================================
+      // CALCULATE HEADCOUNT
+      // ====================================================
+
+      try {
+
+        const result =
+          calculateBulkRegistration(
+            excelFileUrl
+          );
+
+
+        // ==================================================
+        // WRITE ONLY M AND N
+        // ==================================================
+
+        groupSheet
+          .getRange(
+            sheetRow,
+            13,
+            1,
+            2
+          )
+          .setValues([[
+            result.headcount,
+            result.free
+          ]]);
+
+
+        console.log(
+          "UPDATED GROUP ROW " +
+          sheetRow +
+          " | " +
+          groupEmail +
+          " | HEADCOUNT: " +
+          result.headcount +
+          " | FREE: " +
+          result.free
+        );
+
+
+        updatedCount++;
+
+
+      } catch (error) {
+
+        console.log(
+          "FAILED GROUP ROW " +
+          sheetRow +
+          " | " +
+          groupEmail +
+          " | " +
+          error
+        );
+
+      }
+
+    }
+  );
+
+
+  SpreadsheetApp.flush();
+
+
+  console.log(
+    "========================================"
+  );
+
+  console.log(
+    "BACKFILL COMPLETE"
+  );
+
+  console.log(
+    "Records updated: " +
+    updatedCount
+  );
+
+  console.log(
+    "========================================"
+  );
+
+}
+
+/**
+ * ==========================================================
+ * NEW FEATURE:
+ * IDENTIFY FREE PARTICIPANTS
+ * ==========================================================
+ *
+ * This function ONLY reads the uploaded Excel file.
+ *
+ * It does NOT:
+ * - modify Group_Bulk Attendees
+ * - modify Individual Attendees
+ * - create QR codes
+ * - send emails
+ * - modify attendance
+ * - modify snack status
+ *
+ * Participant data starts at Excel Row 5.
+ *
+ * Free participant positions:
+ * 31, 62, 93, 124, ...
+ */
+function identifyBulkFreeParticipants(fileUrl) {
+
+  const HEADER_ROWS = 4;
+  const FREE_INTERVAL = 30;
+  const FREE_OFFSET = 1;
+
+
+  // ========================================================
+  // 1. EXTRACT DRIVE FILE ID
+  // ========================================================
+
+  const fileIdMatch =
+    String(fileUrl)
+      .match(/[-\w]{25,}/);
+
+  if (!fileIdMatch) {
+    throw new Error(
+      "Unable to extract the Excel file ID from the uploaded file link."
+    );
+  }
+
+  const fileId =
+    fileIdMatch[0];
+
+
+  // ========================================================
+  // 2. GET EXCEL FILE
+  // ========================================================
+
+  const file =
+    DriveApp.getFileById(fileId);
+
+  const blob =
+    file.getBlob();
+
+
+  // ========================================================
+  // 3. TEMPORARILY CONVERT EXCEL
+  // ========================================================
+
+  const tempFile =
+    Drive.Files.create(
+      {
+        name:
+          "TEMP_BULK_FREE_" +
+          new Date().getTime(),
+
+        mimeType:
+          MimeType.GOOGLE_SHEETS
+      },
+      blob
+    );
+
+
+  try {
+
+    // ======================================================
+    // 4. OPEN CONVERTED FILE
+    // ======================================================
+
+    const tempSpreadsheet =
+      SpreadsheetApp.openById(
+        tempFile.id
+      );
+
+
+    // ======================================================
+    // 5. FIND MASTERLIST
+    // ======================================================
+
+    const sheets =
+      tempSpreadsheet.getSheets();
+
+    let sheet =
+      tempSpreadsheet.getSheetByName(
+        "Masterlist"
+      );
+
+
+    // Fallback to first worksheet
+    if (!sheet) {
+      sheet = sheets[0];
+    }
+
+
+    if (!sheet) {
+      throw new Error(
+        "No worksheet was found in the uploaded Excel file."
+      );
+    }
+
+
+    // ======================================================
+    // 6. GET DATA
+    // ======================================================
+
+    const lastRow =
+      sheet.getLastRow();
+
+    const lastColumn =
+      sheet.getLastColumn();
+
+
+    if (lastRow <= HEADER_ROWS) {
+
+      return {
+        headcount: 0,
+        free: 0,
+        freeParticipants: []
+      };
+
+    }
+
+
+    // ======================================================
+    // 7. READ PARTICIPANTS FROM ROW 5
+    // ======================================================
+
+    const participantData =
+      sheet.getRange(
+        HEADER_ROWS + 1,
+        1,
+        lastRow - HEADER_ROWS,
+        lastColumn
+      ).getValues();
+
+
+    // ======================================================
+    // 8. BUILD PARTICIPANT LIST
+    // ======================================================
+
+    const participants = [];
+
+
+    participantData.forEach(
+      function(row, index) {
+
+        const firstName =
+          String(row[0] || "")
+            .trim();
+
+        const lastName =
+          String(row[1] || "")
+            .trim();
+
+        const middleInitial =
+          String(row[2] || "")
+            .trim();
+
+        const email =
+          String(row[3] || "")
+            .trim();
+
+        /*
+         * Only count actual participant rows.
+         */
+
+        if (
+          firstName ||
+          lastName ||
+          email
+        ) {
+
+          const participantNumber =
+            participants.length + 1;
+
+          const excelRow =
+            HEADER_ROWS + 1 + index;
+
+
+          participants.push({
+
+            number:
+              participantNumber,
+
+            excelRow:
+              excelRow,
+
+            firstName:
+              firstName,
+
+            lastName:
+              lastName,
+
+            middleInitial:
+              middleInitial,
+
+            email:
+              email,
+
+            name:
+              [
+                firstName,
+                middleInitial,
+                lastName
+              ]
+                .filter(Boolean)
+                .join(" ")
+                .trim()
+
+          });
+
+        }
+
+      }
+    );
+
+
+    // ======================================================
+    // 9. CALCULATE HEADCOUNT
+    // ======================================================
+
+    const headcount =
+      participants.length;
+
+
+    // ======================================================
+    // 10. CALCULATE FREE COUNT
+    // ======================================================
+
+    const free =
+      Math.floor(
+        headcount / FREE_INTERVAL
+      );
+
+
+    // ======================================================
+    // 11. IDENTIFY FREE PARTICIPANTS
+    // ======================================================
+
+    const freeParticipants = [];
+
+
+    /*
+     * Free positions:
+     *
+     * 31
+     * 62
+     * 93
+     * 124
+     * ...
+     *
+     * Formula:
+     *
+     * (30 × 1) + 1 = 31
+     * (30 × 2) + 2 = 62
+     * (30 × 3) + 3 = 93
+     *
+     * Equivalent:
+     *
+     * participantNumber = 31 + (n × 31)
+     */
+
+    for (
+      let i = 1;
+      i <= free;
+      i++
+    ) {
+
+      const freeParticipantNumber =
+        (FREE_INTERVAL * i) + i;
+
+
+      const participant =
+        participants.find(
+          function(p) {
+            return p.number === freeParticipantNumber;
+          }
+        );
+
+
+      /*
+       * Only identify the participant if
+       * that participant actually exists.
+       */
+      if (participant) {
+
+        freeParticipants.push(
+          participant
+        );
+
+      }
+
+    }
+
+
+    // ======================================================
+    // 12. LOG RESULTS
+    // ======================================================
+
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "FREE PARTICIPANT IDENTIFICATION"
+    );
+
+    console.log(
+      "HEADCOUNT: " +
+      headcount
+    );
+
+    console.log(
+      "FREE COUNT: " +
+      free
+    );
+
+
+    freeParticipants.forEach(
+      function(participant) {
+
+        console.log(
+          "FREE #" +
+          participant.number +
+          " | " +
+          participant.name +
+          " | Excel Row " +
+          participant.excelRow +
+          " | " +
+          participant.email
+        );
+
+      }
+    );
+
+
+    console.log(
+      "========================================"
+    );
+
+
+    // ======================================================
+    // 13. RETURN RESULTS
+    // ======================================================
+
+    return {
+
+      headcount:
+        headcount,
+
+      free:
+        free,
+
+      freeParticipants:
+        freeParticipants
+
+    };
+
+
+  } finally {
+
+    // ======================================================
+    // 14. DELETE TEMPORARY FILE
+    // ======================================================
+
+    try {
+
+      Drive.Files.remove(
+        tempFile.id
+      );
+
+    } catch (cleanupError) {
+
+      console.log(
+        "Temporary file cleanup failed: " +
+        cleanupError
+      );
+
+    }
+
+  }
+
+}
+
+/**
+ * ==========================================================
+ * TEST FREE PARTICIPANT IDENTIFICATION
+ * ==========================================================
+ *
+ * This does NOT modify any Google Sheet.
+ */
+function testBulkFreeParticipants() {
+
+  const ss =
+    getSpreadsheet();
+
+  const sourceSheet =
+    ss.getSheetByName(
+      "Form Responses 2"
+    );
+
+
+  if (!sourceSheet) {
+    throw new Error(
+      'Sheet "Form Responses 2" was not found.'
+    );
+  }
+
+
+  const lastRow =
+    sourceSheet.getLastRow();
+
+
+  if (lastRow < 2) {
+    throw new Error(
+      "No bulk registration submissions found."
+    );
+  }
+
+
+  // Column D = uploaded Excel
+  const excelFileUrl =
+    sourceSheet
+      .getRange(
+        lastRow,
+        4
+      )
+      .getValue();
+
+
+  if (!excelFileUrl) {
+    throw new Error(
+      "The latest bulk registration has no Excel file."
+    );
+  }
+
+
+  console.log(
+    "========================================"
+  );
+
+  console.log(
+    "FREE PARTICIPANT TEST"
+  );
+
+  console.log(
+    "Form Response Row: " +
+    lastRow
+  );
+
+
+  const result =
+    identifyBulkFreeParticipants(
+      excelFileUrl
+    );
+
+
+  console.log(
+    "HEADCOUNT: " +
+    result.headcount
+  );
+
+  console.log(
+    "FREE: " +
+    result.free
+  );
+
+
+  console.log(
+    "----------------------------------------"
+  );
+
+  console.log(
+    "FREE PARTICIPANTS:"
+  );
+
+
+  if (
+    result.freeParticipants.length === 0
+  ) {
+
+    console.log(
+      "No free participants identified."
+    );
+
+  } else {
+
+    result.freeParticipants.forEach(
+      function(participant) {
+
+        console.log(
+          "#" +
+          participant.number +
+          " | " +
+          participant.name +
+          " | Excel Row " +
+          participant.excelRow +
+          " | " +
+          participant.email
+        );
+
+      }
+    );
+
+  }
+
+
+  console.log(
+    "========================================"
+  );
+
+
+  return result;
+
+}
+/**
+ * ==========================================================
+ * NEW FEATURE:
+ * IDENTIFY FREE PARTICIPANTS
+ * ==========================================================
+ *
+ * This function ONLY reads the uploaded Excel file.
+ *
+ * It does NOT:
+ * - modify Group_Bulk Attendees
+ * - modify Individual Attendees
+ * - create QR codes
+ * - send emails
+ * - modify attendance
+ * - modify snack status
+ *
+ * Participant data starts at Excel Row 5.
+ *
+ * Free participant positions:
+ * 31, 62, 93, 124, ...
+ */
+function identifyBulkFreeParticipants(fileUrl) {
+
+  const HEADER_ROWS = 4;
+  const FREE_INTERVAL = 30;
+  const FREE_OFFSET = 1;
+
+
+  // ========================================================
+  // 1. EXTRACT DRIVE FILE ID
+  // ========================================================
+
+  const fileIdMatch =
+    String(fileUrl)
+      .match(/[-\w]{25,}/);
+
+  if (!fileIdMatch) {
+    throw new Error(
+      "Unable to extract the Excel file ID from the uploaded file link."
+    );
+  }
+
+  const fileId =
+    fileIdMatch[0];
+
+
+  // ========================================================
+  // 2. GET EXCEL FILE
+  // ========================================================
+
+  const file =
+    DriveApp.getFileById(fileId);
+
+  const blob =
+    file.getBlob();
+
+
+  // ========================================================
+  // 3. TEMPORARILY CONVERT EXCEL
+  // ========================================================
+
+  const tempFile =
+    Drive.Files.create(
+      {
+        name:
+          "TEMP_BULK_FREE_" +
+          new Date().getTime(),
+
+        mimeType:
+          MimeType.GOOGLE_SHEETS
+      },
+      blob
+    );
+
+
+  try {
+
+    // ======================================================
+    // 4. OPEN CONVERTED FILE
+    // ======================================================
+
+    const tempSpreadsheet =
+      SpreadsheetApp.openById(
+        tempFile.id
+      );
+
+
+    // ======================================================
+    // 5. FIND MASTERLIST
+    // ======================================================
+
+    const sheets =
+      tempSpreadsheet.getSheets();
+
+    let sheet =
+      tempSpreadsheet.getSheetByName(
+        "Masterlist"
+      );
+
+
+    // Fallback to first worksheet
+    if (!sheet) {
+      sheet = sheets[0];
+    }
+
+
+    if (!sheet) {
+      throw new Error(
+        "No worksheet was found in the uploaded Excel file."
+      );
+    }
+
+
+    // ======================================================
+    // 6. GET DATA
+    // ======================================================
+
+    const lastRow =
+      sheet.getLastRow();
+
+    const lastColumn =
+      sheet.getLastColumn();
+
+
+    if (lastRow <= HEADER_ROWS) {
+
+      return {
+        headcount: 0,
+        free: 0,
+        freeParticipants: []
+      };
+
+    }
+
+
+    // ======================================================
+    // 7. READ PARTICIPANTS FROM ROW 5
+    // ======================================================
+
+    const participantData =
+      sheet.getRange(
+        HEADER_ROWS + 1,
+        1,
+        lastRow - HEADER_ROWS,
+        lastColumn
+      ).getValues();
+
+
+    // ======================================================
+    // 8. BUILD PARTICIPANT LIST
+    // ======================================================
+
+    const participants = [];
+
+
+    participantData.forEach(
+      function(row, index) {
+
+        const firstName =
+          String(row[0] || "")
+            .trim();
+
+        const lastName =
+          String(row[1] || "")
+            .trim();
+
+        const middleInitial =
+          String(row[2] || "")
+            .trim();
+
+        const email =
+          String(row[3] || "")
+            .trim();
+
+        /*
+         * Only count actual participant rows.
+         */
+
+        if (
+          firstName ||
+          lastName ||
+          email
+        ) {
+
+          const participantNumber =
+            participants.length + 1;
+
+          const excelRow =
+            HEADER_ROWS + 1 + index;
+
+
+          participants.push({
+
+            number:
+              participantNumber,
+
+            excelRow:
+              excelRow,
+
+            firstName:
+              firstName,
+
+            lastName:
+              lastName,
+
+            middleInitial:
+              middleInitial,
+
+            email:
+              email,
+
+            name:
+              [
+                firstName,
+                middleInitial,
+                lastName
+              ]
+                .filter(Boolean)
+                .join(" ")
+                .trim()
+
+          });
+
+        }
+
+      }
+    );
+
+
+    // ======================================================
+    // 9. CALCULATE HEADCOUNT
+    // ======================================================
+
+    const headcount =
+      participants.length;
+
+
+    // ======================================================
+    // 10. CALCULATE FREE COUNT
+    // ======================================================
+
+    const free =
+      Math.floor(
+        headcount / FREE_INTERVAL
+      );
+
+
+    // ======================================================
+    // 11. IDENTIFY FREE PARTICIPANTS
+    // ======================================================
+
+    const freeParticipants = [];
+
+
+    /*
+     * Free positions:
+     *
+     * 31
+     * 62
+     * 93
+     * 124
+     * ...
+     *
+     * Formula:
+     *
+     * (30 × 1) + 1 = 31
+     * (30 × 2) + 2 = 62
+     * (30 × 3) + 3 = 93
+     *
+     * Equivalent:
+     *
+     * participantNumber = 31 + (n × 31)
+     */
+
+    for (
+      let i = 1;
+      i <= free;
+      i++
+    ) {
+
+      const freeParticipantNumber =
+        (FREE_INTERVAL * i) + i;
+
+
+      const participant =
+        participants.find(
+          function(p) {
+            return p.number === freeParticipantNumber;
+          }
+        );
+
+
+      /*
+       * Only identify the participant if
+       * that participant actually exists.
+       */
+      if (participant) {
+
+        freeParticipants.push(
+          participant
+        );
+
+      }
+
+    }
+
+
+    // ======================================================
+    // 12. LOG RESULTS
+    // ======================================================
+
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "FREE PARTICIPANT IDENTIFICATION"
+    );
+
+    console.log(
+      "HEADCOUNT: " +
+      headcount
+    );
+
+    console.log(
+      "FREE COUNT: " +
+      free
+    );
+
+
+    freeParticipants.forEach(
+      function(participant) {
+
+        console.log(
+          "FREE #" +
+          participant.number +
+          " | " +
+          participant.name +
+          " | Excel Row " +
+          participant.excelRow +
+          " | " +
+          participant.email
+        );
+
+      }
+    );
+
+
+    console.log(
+      "========================================"
+    );
+
+
+    // ======================================================
+    // 13. RETURN RESULTS
+    // ======================================================
+
+    return {
+
+      headcount:
+        headcount,
+
+      free:
+        free,
+
+      freeParticipants:
+        freeParticipants
+
+    };
+
+
+  } finally {
+
+    // ======================================================
+    // 14. DELETE TEMPORARY FILE
+    // ======================================================
+
+    try {
+
+      Drive.Files.remove(
+        tempFile.id
+      );
+
+    } catch (cleanupError) {
+
+      console.log(
+        "Temporary file cleanup failed: " +
+        cleanupError
+      );
+
+    }
+
+  }
+
+}
+
+/**
+ * ==========================================================
+ * NEW FEATURE:
+ * IDENTIFY FREE PARTICIPANTS
+ * ==========================================================
+ *
+ * This function ONLY reads the uploaded Excel file.
+ *
+ * It does NOT:
+ * - modify Group_Bulk Attendees
+ * - modify Individual Attendees
+ * - create QR codes
+ * - send emails
+ * - modify attendance
+ * - modify snack status
+ *
+ * Participant data starts at Excel Row 5.
+ *
+ * Free participant positions:
+ * 31, 62, 93, 124, ...
+ */
+function identifyBulkFreeParticipants(fileUrl) {
+
+  const HEADER_ROWS = 4;
+  const FREE_INTERVAL = 30;
+  const FREE_OFFSET = 1;
+
+
+  // ========================================================
+  // 1. EXTRACT DRIVE FILE ID
+  // ========================================================
+
+  const fileIdMatch =
+    String(fileUrl)
+      .match(/[-\w]{25,}/);
+
+  if (!fileIdMatch) {
+    throw new Error(
+      "Unable to extract the Excel file ID from the uploaded file link."
+    );
+  }
+
+  const fileId =
+    fileIdMatch[0];
+
+
+  // ========================================================
+  // 2. GET EXCEL FILE
+  // ========================================================
+
+  const file =
+    DriveApp.getFileById(fileId);
+
+  const blob =
+    file.getBlob();
+
+
+  // ========================================================
+  // 3. TEMPORARILY CONVERT EXCEL
+  // ========================================================
+
+  const tempFile =
+    Drive.Files.create(
+      {
+        name:
+          "TEMP_BULK_FREE_" +
+          new Date().getTime(),
+
+        mimeType:
+          MimeType.GOOGLE_SHEETS
+      },
+      blob
+    );
+
+
+  try {
+
+    // ======================================================
+    // 4. OPEN CONVERTED FILE
+    // ======================================================
+
+    const tempSpreadsheet =
+      SpreadsheetApp.openById(
+        tempFile.id
+      );
+
+
+    // ======================================================
+    // 5. FIND MASTERLIST
+    // ======================================================
+
+    const sheets =
+      tempSpreadsheet.getSheets();
+
+    let sheet =
+      tempSpreadsheet.getSheetByName(
+        "Masterlist"
+      );
+
+
+    // Fallback to first worksheet
+    if (!sheet) {
+      sheet = sheets[0];
+    }
+
+
+    if (!sheet) {
+      throw new Error(
+        "No worksheet was found in the uploaded Excel file."
+      );
+    }
+
+
+    // ======================================================
+    // 6. GET DATA
+    // ======================================================
+
+    const lastRow =
+      sheet.getLastRow();
+
+    const lastColumn =
+      sheet.getLastColumn();
+
+
+    if (lastRow <= HEADER_ROWS) {
+
+      return {
+        headcount: 0,
+        free: 0,
+        freeParticipants: []
+      };
+
+    }
+
+
+    // ======================================================
+    // 7. READ PARTICIPANTS FROM ROW 5
+    // ======================================================
+
+    const participantData =
+      sheet.getRange(
+        HEADER_ROWS + 1,
+        1,
+        lastRow - HEADER_ROWS,
+        lastColumn
+      ).getValues();
+
+
+    // ======================================================
+    // 8. BUILD PARTICIPANT LIST
+    // ======================================================
+
+    const participants = [];
+
+
+    participantData.forEach(
+      function(row, index) {
+
+        const firstName =
+          String(row[0] || "")
+            .trim();
+
+        const lastName =
+          String(row[1] || "")
+            .trim();
+
+        const middleInitial =
+          String(row[2] || "")
+            .trim();
+
+        const email =
+          String(row[3] || "")
+            .trim();
+
+        /*
+         * Only count actual participant rows.
+         */
+
+        if (
+          firstName ||
+          lastName ||
+          email
+        ) {
+
+          const participantNumber =
+            participants.length + 1;
+
+          const excelRow =
+            HEADER_ROWS + 1 + index;
+
+
+          participants.push({
+
+            number:
+              participantNumber,
+
+            excelRow:
+              excelRow,
+
+            firstName:
+              firstName,
+
+            lastName:
+              lastName,
+
+            middleInitial:
+              middleInitial,
+
+            email:
+              email,
+
+            name:
+              [
+                firstName,
+                middleInitial,
+                lastName
+              ]
+                .filter(Boolean)
+                .join(" ")
+                .trim()
+
+          });
+
+        }
+
+      }
+    );
+
+
+    // ======================================================
+    // 9. CALCULATE HEADCOUNT
+    // ======================================================
+
+    const headcount =
+      participants.length;
+
+
+    // ======================================================
+    // 10. CALCULATE FREE COUNT
+    // ======================================================
+
+    const free =
+      Math.floor(
+        headcount / FREE_INTERVAL
+      );
+
+
+    // ======================================================
+    // 11. IDENTIFY FREE PARTICIPANTS
+    // ======================================================
+
+    const freeParticipants = [];
+
+
+    /*
+     * Free positions:
+     *
+     * 31
+     * 62
+     * 93
+     * 124
+     * ...
+     *
+     * Formula:
+     *
+     * (30 × 1) + 1 = 31
+     * (30 × 2) + 2 = 62
+     * (30 × 3) + 3 = 93
+     *
+     * Equivalent:
+     *
+     * participantNumber = 31 + (n × 31)
+     */
+
+    for (
+      let i = 1;
+      i <= free;
+      i++
+    ) {
+
+      const freeParticipantNumber =
+        (FREE_INTERVAL * i) + i;
+
+
+      const participant =
+        participants.find(
+          function(p) {
+            return p.number === freeParticipantNumber;
+          }
+        );
+
+
+      /*
+       * Only identify the participant if
+       * that participant actually exists.
+       */
+      if (participant) {
+
+        freeParticipants.push(
+          participant
+        );
+
+      }
+
+    }
+
+
+    // ======================================================
+    // 12. LOG RESULTS
+    // ======================================================
+
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "FREE PARTICIPANT IDENTIFICATION"
+    );
+
+    console.log(
+      "HEADCOUNT: " +
+      headcount
+    );
+
+    console.log(
+      "FREE COUNT: " +
+      free
+    );
+
+
+    freeParticipants.forEach(
+      function(participant) {
+
+        console.log(
+          "FREE #" +
+          participant.number +
+          " | " +
+          participant.name +
+          " | Excel Row " +
+          participant.excelRow +
+          " | " +
+          participant.email
+        );
+
+      }
+    );
+
+
+    console.log(
+      "========================================"
+    );
+
+
+    // ======================================================
+    // 13. RETURN RESULTS
+    // ======================================================
+
+    return {
+
+      headcount:
+        headcount,
+
+      free:
+        free,
+
+      freeParticipants:
+        freeParticipants
+
+    };
+
+
+  } finally {
+
+    // ======================================================
+    // 14. DELETE TEMPORARY FILE
+    // ======================================================
+
+    try {
+
+      Drive.Files.remove(
+        tempFile.id
+      );
+
+    } catch (cleanupError) {
+
+      console.log(
+        "Temporary file cleanup failed: " +
+        cleanupError
+      );
+
+    }
+
+  }
+
+}
+/**
+ * ==========================================================
+ * TEST FREE PARTICIPANT IDENTIFICATION
+ * ==========================================================
+ *
+ * This does NOT modify any Google Sheet.
+ */
+function testBulkFreeParticipants() {
+
+  const ss =
+    getSpreadsheet();
+
+  const sourceSheet =
+    ss.getSheetByName(
+      "Form Responses 2"
+    );
+
+
+  if (!sourceSheet) {
+    throw new Error(
+      'Sheet "Form Responses 2" was not found.'
+    );
+  }
+
+
+  const lastRow =
+    sourceSheet.getLastRow();
+
+
+  if (lastRow < 2) {
+    throw new Error(
+      "No bulk registration submissions found."
+    );
+  }
+
+
+  // Column D = uploaded Excel
+  const excelFileUrl =
+    sourceSheet
+      .getRange(
+        lastRow,
+        4
+      )
+      .getValue();
+
+
+  if (!excelFileUrl) {
+    throw new Error(
+      "The latest bulk registration has no Excel file."
+    );
+  }
+
+
+  console.log(
+    "========================================"
+  );
+
+  console.log(
+    "FREE PARTICIPANT TEST"
+  );
+
+  console.log(
+    "Form Response Row: " +
+    lastRow
+  );
+
+
+  const result =
+    identifyBulkFreeParticipants(
+      excelFileUrl
+    );
+
+
+  console.log(
+    "HEADCOUNT: " +
+    result.headcount
+  );
+
+  console.log(
+    "FREE: " +
+    result.free
+  );
+
+
+  console.log(
+    "----------------------------------------"
+  );
+
+  console.log(
+    "FREE PARTICIPANTS:"
+  );
+
+
+  if (
+    result.freeParticipants.length === 0
+  ) {
+
+    console.log(
+      "No free participants identified."
+    );
+
+  } else {
+
+    result.freeParticipants.forEach(
+      function(participant) {
+
+        console.log(
+          "#" +
+          participant.number +
+          " | " +
+          participant.name +
+          " | Excel Row " +
+          participant.excelRow +
+          " | " +
+          participant.email
+        );
+
+      }
+    );
+
+  }
+
+
+  console.log(
+    "========================================"
+  );
+
+
+  return result;
+
+}
+
+/**
+ * =========================================================
+ * BULK REGISTRATION DISPLAY INFORMATION
+ * =========================================================
+ *
+ * Reads the already-calculated values from:
+ * Group_Bulk Attendees
+ *
+ * Columns:
+ * A = Attendee ID
+ * B = Name
+ * C = Certificate Name
+ * D = Email
+ * E = Contact
+ * F = School
+ * G = Attendance
+ * H = Attendance Time
+ * I = AM Snack
+ * J = AM Snack Time
+ * K = PM Snack
+ * L = PM Snack Time
+ * M = HEADCOUNT
+ * N = FREE
+ *
+ * Paying Participants = HEADCOUNT - FREE
+ */
+function getBulkRegistrationInfo(sheet, targetId) {
+
+  if (!sheet || sheet.getLastRow() < 2) {
+    return null;
+  }
+
+  const finder = sheet
+    .getRange("A:A")
+    .createTextFinder(targetId)
+    .matchEntireCell(true)
+    .matchCase(false);
+
+  const cell = finder.findNext();
+
+  if (!cell) {
+    return null;
+  }
+
+  const rowIndex = cell.getRow();
+
+  if (rowIndex < 2) {
+    return null;
+  }
+
+  // Read through column N.
+  const rowData = sheet
+    .getRange(rowIndex, 1, 1, 14)
+    .getDisplayValues()[0];
+
+  const school = String(rowData[5] || "").trim();
+
+  const headcount =
+    parseInt(String(rowData[12] || "").replace(/,/g, ""), 10) || 0;
+
+  const free =
+    parseInt(String(rowData[13] || "").replace(/,/g, ""), 10) || 0;
+
+  const payingParticipants =
+    Math.max(headcount - free, 0);
+
+  return {
+    isBulk: true,
+    school: school || "School Not Specified",
+    headcount: headcount,
+    free: free,
+    payingParticipants: payingParticipants
+  };
 }
