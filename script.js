@@ -847,22 +847,28 @@ function handleResponse(res) {
         )
             .trim();
 
-    // SCHOOL / ORGANIZATION returned by Code.gs.
-    // For individual attendees this is Column F of
-    // "Individual Attendees".
+    // Explicit scan metadata returned by Code.gs.
     const school =
         String(
             data.school ||
             data.schoolName ||
             data.organization ||
-            data.institution ||
             ""
         )
             .trim();
 
+    const attendanceStatus =
+        String(
+            data.attendanceStatus ||
+            ""
+        )
+            .trim()
+            .toUpperCase();
 
     const bulkInfo =
-        normalizeBulkInfo(data);
+        data.isBulk === true
+            ? data
+            : null;
 
 
     console.log(
@@ -873,8 +879,7 @@ function handleResponse(res) {
             name: name,
             attendeeId: attendeeId,
             timestamp: timestamp,
-            message: message,
-            bulkInfo: bulkInfo
+            message: message
         }
     );
 
@@ -926,8 +931,9 @@ function handleResponse(res) {
             safeName,
             safeTimestamp,
             safeMessage,
+            bulkInfo,
             school,
-            bulkInfo
+            attendanceStatus
         );
 
 
@@ -938,8 +944,9 @@ function handleResponse(res) {
             attendeeId,
             safeTimestamp,
             safeMessage,
+            bulkInfo,
             school,
-            bulkInfo
+            attendanceStatus
         );
 
 
@@ -987,8 +994,9 @@ function handleResponse(res) {
             safeName,
             safeTimestamp,
             safeMessage,
+            bulkInfo,
             school,
-            bulkInfo
+            attendanceStatus
         );
 
 
@@ -999,7 +1007,9 @@ function handleResponse(res) {
             attendeeId,
             safeTimestamp,
             safeMessage,
-            bulkInfo
+            bulkInfo,
+            school,
+            attendanceStatus
         );
 
 
@@ -1046,7 +1056,9 @@ function handleResponse(res) {
             safeName,
             safeTimestamp,
             safeMessage,
-            bulkInfo
+            bulkInfo,
+            school,
+            attendanceStatus
         );
 
 
@@ -1057,7 +1069,9 @@ function handleResponse(res) {
             attendeeId,
             safeTimestamp,
             safeMessage,
-            bulkInfo
+            bulkInfo,
+            school,
+            attendanceStatus
         );
 
 
@@ -1106,9 +1120,7 @@ function handleResponse(res) {
         safeName,
         attendeeId,
         safeTimestamp,
-        safeMessage,
-        school,
-        null
+        safeMessage
     );
 
 
@@ -1186,8 +1198,7 @@ function updateStatus(
     title,
     name,
     timestamp,
-    message,
-    bulkInfo = null
+    message
 ) {
 
     if (!statusBox) {
@@ -1233,12 +1244,6 @@ function updateStatus(
             "Select a station and scan an attendee QR code.";
 
     }
-
-
-    renderBulkRegistrationInfo(
-        bulkRegistrationInfo,
-        bulkInfo
-    );
 
 
     updateResultIcon(type);
@@ -1332,8 +1337,9 @@ function showResultModal(
     attendeeId,
     timestamp,
     message,
+    bulkInfo = null,
     school = "",
-    bulkInfo = null
+    attendanceStatus = ""
 ) {
     const modalElement = document.getElementById("resultModal");
 
@@ -1365,10 +1371,6 @@ function showResultModal(
         document.getElementById("modalMessage");
 
 
-    const bulkInfoContainer =
-        getOrCreateBulkInfoContainer(modalElement);
-
-
     /* -----------------------------------------------------
        NORMALIZE DATA
     ----------------------------------------------------- */
@@ -1380,7 +1382,7 @@ function showResultModal(
         String(status || "TRY AGAIN");
 
     const safeName =
-        String(name || attendeeId || "ATTENDEE");
+        String(name || "ATTENDEE NOT IDENTIFIED");
 
     const safeId =
         String(attendeeId || "NO ATTENDEE ID");
@@ -1396,6 +1398,11 @@ function showResultModal(
 
     const safeSchool =
         String(school || "").trim();
+
+    const safeAttendanceStatus =
+        String(attendanceStatus || "")
+            .trim()
+            .toUpperCase();
 
 
     /* -----------------------------------------------------
@@ -1476,34 +1483,73 @@ function showResultModal(
             safeName;
     }
 
+    // Individual school display. The existing modalSchool element is
+    // inside the bulk-registration panel, so it is hidden for individuals.
+    // Create a dedicated element here without changing index.html.
+    let individualSchool =
+        document.getElementById("individualSchoolDisplay");
+
+    if (!individualSchool && modalName) {
+        individualSchool = document.createElement("div");
+        individualSchool.id = "individualSchoolDisplay";
+        individualSchool.style.cssText =
+            "text-align:center;margin:2px 18px 10px;font-size:16px;line-height:1.25;color:#ffffff;";
+
+        const label = document.createElement("div");
+        label.textContent = "SCHOOL / ORGANIZATION";
+        label.style.cssText =
+            "font-size:12px;font-weight:700;letter-spacing:.04em;opacity:.78;margin-bottom:3px;";
+
+        const value = document.createElement("div");
+        value.id = "individualSchoolValue";
+        value.style.cssText =
+            "font-weight:700;word-break:break-word;";
+
+        individualSchool.appendChild(label);
+        individualSchool.appendChild(value);
+        modalName.insertAdjacentElement("afterend", individualSchool);
+    }
+
+    const individualSchoolValue =
+        document.getElementById("individualSchoolValue");
+
+    if (individualSchoolValue) {
+        individualSchoolValue.textContent =
+            safeSchool || "-";
+    }
+
+    if (individualSchool) {
+        individualSchool.style.display =
+            bulkInfo ? "none" : "block";
+    }
+
     if (modalId) {
         modalId.textContent =
             safeId;
     }
 
     if (modalTime) {
-        modalTime.textContent =
-            safeTimestamp;
+        const selectedStation =
+            typeof getSelectedStation === "function"
+                ? getSelectedStation()
+                : "";
+
+        if (
+            selectedStation === "ATTENDANCE" &&
+            (safeType === "success" || safeType === "already")
+        ) {
+            modalTime.textContent =
+                "PRESENT • " + safeTimestamp;
+        } else {
+            modalTime.textContent =
+                safeTimestamp;
+        }
     }
 
     if (modalMessage) {
         modalMessage.textContent =
             safeMessage;
     }
-
-    // IMPORTANT:
-    // Display the actual school/organization returned by Code.gs.
-    // Do not leave the HTML placeholder "SCHOOL / ORGANIZATION -".
-    if (modalSchool) {
-        modalSchool.textContent =
-            safeSchool || "-";
-    }
-
-
-    renderBulkRegistrationInfo(
-        bulkInfoContainer,
-        bulkInfo
-    );
 
 
     /* -----------------------------------------------------
@@ -1569,167 +1615,6 @@ function showResultModal(
             safeMessage
         );
     }
-}
-
-
-/* =========================================================
-   BULK REGISTRATION DATA
-========================================================= */
-
-function normalizeBulkInfo(data) {
-
-    if (!data || typeof data !== "object") {
-        return null;
-    }
-
-    const source =
-        data.bulkInfo &&
-        typeof data.bulkInfo === "object"
-            ? data.bulkInfo
-            : data;
-
-    const school = firstValue(
-        source.school,
-        source.schoolName,
-        source.organization,
-        source.institution
-    );
-
-    let headcount = toNumber(firstValue(
-        source.headcount,
-        source.headCount,
-        source.totalHeadcount,
-        source.total_headcount,
-        source.totalParticipants,
-        source.totalParticipantsCount
-    ));
-
-    let free = toNumber(firstValue(
-        source.free,
-        source.freeCount,
-        source.freeParticipants,
-        source.freeRegistration,
-        source.freeRegistrations,
-        source.free_headcount
-    ));
-
-    let paying = toNumber(firstValue(
-        source.paying,
-        source.payee,
-        source.paid,
-        source.payingParticipants,
-        source.paidParticipants,
-        source.payerCount
-    ));
-
-    if (headcount !== null && free === null) {
-        free = Math.floor(headcount / 30);
-    }
-
-    if (headcount !== null && paying === null && free !== null) {
-        paying = Math.max(0, headcount - free);
-    }
-
-    const hasBulkData =
-        school !== null ||
-        headcount !== null ||
-        free !== null ||
-        paying !== null;
-
-    if (!hasBulkData) {
-        return null;
-    }
-
-    return {
-        school: school || "NOT PROVIDED",
-        headcount: headcount !== null ? headcount : "—",
-        paying: paying !== null ? paying : "—",
-        free: free !== null ? free : "—"
-    };
-}
-
-function firstValue(...values) {
-    for (const value of values) {
-        if (value !== undefined && value !== null && String(value).trim() !== "") {
-            return value;
-        }
-    }
-    return null;
-}
-
-function toNumber(value) {
-    if (value === undefined || value === null || String(value).trim() === "") {
-        return null;
-    }
-
-    const number = Number(String(value).replace(/,/g, "").trim());
-    return Number.isFinite(number) ? number : null;
-}
-
-function getOrCreateBulkInfoContainer(modalElement) {
-
-    if (!modalElement) return null;
-
-    let container = modalElement.querySelector("#bulkRegistrationInfo");
-    if (container) return container;
-
-    const modalMessage = modalElement.querySelector("#modalMessage");
-    if (!modalMessage) return null;
-
-    container = document.createElement("div");
-    container.id = "bulkRegistrationInfo";
-    container.style.display = "none";
-    container.style.marginTop = "16px";
-    container.style.padding = "14px";
-    container.style.borderRadius = "16px";
-    container.style.background = "linear-gradient(145deg, rgba(255,255,255,.075), rgba(0,0,0,.16))";
-    container.style.border = "1px solid rgba(0, 220, 210, .18)";
-    container.style.boxShadow = "inset 2px 2px 8px rgba(255,255,255,.035), inset -3px -3px 10px rgba(0,0,0,.18)";
-    container.style.backdropFilter = "blur(10px)";
-    container.style.webkitBackdropFilter = "blur(10px)";
-    container.style.textAlign = "left";
-
-    modalMessage.insertAdjacentElement("afterend", container);
-    return container;
-}
-
-function renderBulkRegistrationInfo(container, info) {
-
-    if (!container) return;
-
-    if (!info) {
-        container.innerHTML = "";
-        container.style.display = "none";
-        return;
-    }
-
-    const escape = value => String(value ?? "—")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-
-    container.innerHTML = `
-        <div style="font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;opacity:.72;margin-bottom:10px;">BULK REGISTRATION</div>
-        <div style="font-size:15px;font-weight:800;line-height:1.25;margin-bottom:12px;overflow-wrap:anywhere;">${escape(info.school)}</div>
-        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">
-            <div style="padding:10px 8px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.06);text-align:center;">
-                <div style="font-size:9px;opacity:.62;font-weight:700;">HEADCOUNT</div>
-                <div style="font-size:20px;font-weight:900;margin-top:3px;">${escape(info.headcount)}</div>
-            </div>
-            <div style="padding:10px 8px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.06);text-align:center;">
-                <div style="font-size:9px;opacity:.62;font-weight:700;">PAYING</div>
-                <div style="font-size:20px;font-weight:900;margin-top:3px;">${escape(info.paying)}</div>
-            </div>
-            <div style="padding:10px 8px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.06);text-align:center;">
-                <div style="font-size:9px;opacity:.62;font-weight:700;">FREE</div>
-                <div style="font-size:20px;font-weight:900;margin-top:3px;">${escape(info.free)}</div>
-            </div>
-        </div>
-    `;
-
-    container.style.display = "block";
 }
 
 
@@ -2244,9 +2129,7 @@ function handleOverrideResponse(
             "SCAN SUCCESSFULLY",
             safeName,
             safeTimestamp,
-            message,
-            school,
-            null
+            message
         );
 
 
@@ -2256,9 +2139,7 @@ function handleOverrideResponse(
             safeName,
             attendeeId,
             safeTimestamp,
-            message,
-            school,
-            null
+            message
         );
 
 
@@ -2301,9 +2182,7 @@ function handleOverrideResponse(
             "ALREADY SCANNED",
             safeName,
             safeTimestamp,
-            message,
-            school,
-            null
+            message
         );
 
 
@@ -2313,9 +2192,7 @@ function handleOverrideResponse(
             safeName,
             attendeeId,
             safeTimestamp,
-            message,
-            school,
-            null
+            message
         );
 
 
@@ -2387,9 +2264,7 @@ function handleOverrideResponse(
         safeName,
         attendeeId,
         safeTimestamp,
-        message,
-        school,
-        null
+        message
     );
 
 }
