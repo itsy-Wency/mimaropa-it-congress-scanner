@@ -3160,3 +3160,35 @@ label:focus-visible {
         font-size: 12px;
     }
 }
+
+/* =========================================================
+   INDIVIDUAL ATTENDEE SCHOOL
+   ========================================================= */
+
+#individualSchoolInfo {
+    display: none;
+    margin: 10px 0 12px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: rgba(0, 100, 70, 0.06);
+    border: 1px solid rgba(0, 100, 70, 0.12);
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+#individualSchoolInfo .school-label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.62;
+}
+
+#individualSchoolInfo .school-name {
+    display: block;
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.3;
+}

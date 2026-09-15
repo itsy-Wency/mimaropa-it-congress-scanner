@@ -9,8 +9,8 @@
    CONFIGURATION
 ========================================================= */
 
-const DEPLOYED_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw_HEwlUvhGQBY-Us_hoLQzy1FdUlL4ewo5k9-zDRLoq2FvRBplJG8lLAoeiGLKyqa60w/exec";
-   // "https://script.google.com/macros/s/AKfycbw6aqArIX_eXtrfBDe5_iiqX-97-Zfwbgt3K_P21P56jP0-0tjl8PjKf1o6cyESCwaqSw/exec";
+const DEPLOYED_WEB_APP_URL =
+    "https://script.google.com/macros/s/AKfycbw6aqArIX_eXtrfBDe5_iiqX-97-Zfwbgt3K_P21P56jP0-0tjl8PjKf1o6cyESCwaqSw/exec";
 
 
 /* =========================================================
@@ -847,28 +847,19 @@ function handleResponse(res) {
         )
             .trim();
 
-    /* ---------------------------------------------------------
-       BULK REGISTRATION INFORMATION
-    --------------------------------------------------------- */
+    const school =
+        String(
+            data.school ||
+            data.schoolName ||
+            data.organization ||
+            data.institution ||
+            ""
+        )
+            .trim();
+
 
     const bulkInfo =
-        data.isBulk === true
-            ? {
-                isBulk: true,
-                school: String(data.school || "").trim(),
-                headcount: Number(data.headcount || 0),
-                free: Number(data.free || 0),
-                payingParticipants:
-                    Number(
-                        data.payingParticipants ??
-                        Math.max(
-                            Number(data.headcount || 0) -
-                            Number(data.free || 0),
-                            0
-                        )
-                    )
-            }
-            : null;
+        normalizeBulkInfo(data);
 
 
     console.log(
@@ -879,7 +870,9 @@ function handleResponse(res) {
             name: name,
             attendeeId: attendeeId,
             timestamp: timestamp,
-            message: message
+            message: message,
+            school: school,
+            bulkInfo: bulkInfo
         }
     );
 
@@ -930,7 +923,9 @@ function handleResponse(res) {
             "SCAN SUCCESSFULLY",
             safeName,
             safeTimestamp,
-            safeMessage
+            safeMessage,
+            bulkInfo,
+            school
         );
 
 
@@ -941,7 +936,8 @@ function handleResponse(res) {
             attendeeId,
             safeTimestamp,
             safeMessage,
-            bulkInfo
+            bulkInfo,
+            school
         );
 
 
@@ -988,7 +984,9 @@ function handleResponse(res) {
             "ALREADY SCANNED",
             safeName,
             safeTimestamp,
-            safeMessage
+            safeMessage,
+            bulkInfo,
+            school
         );
 
 
@@ -999,7 +997,8 @@ function handleResponse(res) {
             attendeeId,
             safeTimestamp,
             safeMessage,
-            bulkInfo
+            bulkInfo,
+            school
         );
 
 
@@ -1045,7 +1044,9 @@ function handleResponse(res) {
             "TRY AGAIN",
             safeName,
             safeTimestamp,
-            safeMessage
+            safeMessage,
+            bulkInfo,
+            school
         );
 
 
@@ -1055,7 +1056,9 @@ function handleResponse(res) {
             safeName,
             attendeeId,
             safeTimestamp,
-            safeMessage
+            safeMessage,
+            bulkInfo,
+            school
         );
 
 
@@ -1104,7 +1107,9 @@ function handleResponse(res) {
         safeName,
         attendeeId,
         safeTimestamp,
-        safeMessage
+        safeMessage,
+        null,
+        school
     );
 
 
@@ -1182,7 +1187,9 @@ function updateStatus(
     title,
     name,
     timestamp,
-    message
+    message,
+    bulkInfo = null,
+    school = ""
 ) {
 
     if (!statusBox) {
@@ -1228,6 +1235,12 @@ function updateStatus(
             "Select a station and scan an attendee QR code.";
 
     }
+
+
+    renderBulkRegistrationInfo(
+        bulkRegistrationInfo,
+        bulkInfo
+    );
 
 
     updateResultIcon(type);
@@ -1321,7 +1334,8 @@ function showResultModal(
     attendeeId,
     timestamp,
     message,
-    bulkInfo = null
+    bulkInfo = null,
+    school = ""
 ) {
     const modalElement = document.getElementById("resultModal");
 
@@ -1353,6 +1367,22 @@ function showResultModal(
         document.getElementById("modalMessage");
 
 
+    /*
+       Individual attendee school display.
+       Created dynamically so no additional Index.html
+       element is required.
+    */
+    const individualSchoolContainer =
+        getOrCreateIndividualSchoolContainer(
+            modalElement,
+            modalName
+        );
+
+
+    const bulkInfoContainer =
+        getOrCreateBulkInfoContainer(modalElement);
+
+
     /* -----------------------------------------------------
        NORMALIZE DATA
     ----------------------------------------------------- */
@@ -1364,7 +1394,7 @@ function showResultModal(
         String(status || "TRY AGAIN");
 
     const safeName =
-        String(name || "ATTENDEE NOT IDENTIFIED");
+        String(name || attendeeId || "ATTENDEE");
 
     const safeId =
         String(attendeeId || "NO ATTENDEE ID");
@@ -1377,6 +1407,11 @@ function showResultModal(
             message ||
             "Please try again."
         );
+
+    const safeSchool =
+        String(
+            school || ""
+        ).trim();
 
 
     /* -----------------------------------------------------
@@ -1472,57 +1507,29 @@ function showResultModal(
             safeMessage;
     }
 
-    /* ---------------------------------------------------------
-       BULK REGISTRATION SUMMARY
-    --------------------------------------------------------- */
 
     if (
-        bulkRegistrationInfo &&
         bulkInfo &&
-        bulkInfo.isBulk === true
+        (
+            bulkInfo.isBulk === true ||
+            bulkInfo.headcount !== undefined
+        )
     ) {
-        bulkRegistrationInfo.style.display = "block";
-
-        if (modalSchool) {
-            modalSchool.textContent =
-                bulkInfo.school || "School Not Specified";
-        }
-
-        if (modalHeadcount) {
-            modalHeadcount.textContent =
-                Number(bulkInfo.headcount || 0).toLocaleString();
-        }
-
-        if (modalPaying) {
-            modalPaying.textContent =
-                Number(bulkInfo.payingParticipants || 0).toLocaleString();
-        }
-
-        if (modalFree) {
-            modalFree.textContent =
-                Number(bulkInfo.free || 0).toLocaleString();
+        if (individualSchoolContainer) {
+            individualSchoolContainer.style.display = "none";
         }
     } else {
-        if (bulkRegistrationInfo) {
-            bulkRegistrationInfo.style.display = "none";
-        }
-
-        if (modalSchool) {
-            modalSchool.textContent = "-";
-        }
-
-        if (modalHeadcount) {
-            modalHeadcount.textContent = "0";
-        }
-
-        if (modalPaying) {
-            modalPaying.textContent = "0";
-        }
-
-        if (modalFree) {
-            modalFree.textContent = "0";
-        }
+        renderIndividualSchool(
+            individualSchoolContainer,
+            safeSchool
+        );
     }
+
+
+    renderBulkRegistrationInfo(
+        bulkInfoContainer,
+        bulkInfo
+    );
 
 
     /* -----------------------------------------------------
@@ -1588,6 +1595,304 @@ function showResultModal(
             safeMessage
         );
     }
+}
+
+
+/* =========================================================
+   BULK REGISTRATION DATA
+========================================================= */
+
+function normalizeBulkInfo(data) {
+
+    if (!data || typeof data !== "object") {
+        return null;
+    }
+
+    const source =
+        data.bulkInfo &&
+        typeof data.bulkInfo === "object"
+            ? data.bulkInfo
+            : data;
+
+    const school = firstValue(
+        source.school,
+        source.schoolName,
+        source.organization,
+        source.institution
+    );
+
+    let headcount = toNumber(firstValue(
+        source.headcount,
+        source.headCount,
+        source.totalHeadcount,
+        source.total_headcount,
+        source.totalParticipants,
+        source.totalParticipantsCount
+    ));
+
+    let free = toNumber(firstValue(
+        source.free,
+        source.freeCount,
+        source.freeParticipants,
+        source.freeRegistration,
+        source.freeRegistrations,
+        source.free_headcount
+    ));
+
+    let paying = toNumber(firstValue(
+        source.paying,
+        source.payee,
+        source.paid,
+        source.payingParticipants,
+        source.paidParticipants,
+        source.payerCount
+    ));
+
+    if (headcount !== null && free === null) {
+        free = Math.floor(headcount / 30);
+    }
+
+    if (headcount !== null && paying === null && free !== null) {
+        paying = Math.max(0, headcount - free);
+    }
+
+    /*
+       IMPORTANT:
+       An individual attendee can also have a school.
+       Therefore school alone must NOT classify the scan
+       as a bulk registration.
+
+       Bulk information is recognized only when the
+       backend explicitly marks it as bulk or provides
+       bulk-only numeric registration information.
+    */
+    const explicitlyBulk =
+        data.isBulk === true ||
+        (
+            data.bulkInfo &&
+            typeof data.bulkInfo === "object"
+        );
+
+    const hasBulkData =
+        explicitlyBulk ||
+        headcount !== null ||
+        free !== null ||
+        paying !== null;
+
+    if (!hasBulkData) {
+        return null;
+    }
+
+    return {
+        school: school || "NOT PROVIDED",
+        headcount: headcount !== null ? headcount : "—",
+        paying: paying !== null ? paying : "—",
+        free: free !== null ? free : "—"
+    };
+}
+
+function firstValue(...values) {
+    for (const value of values) {
+        if (value !== undefined && value !== null && String(value).trim() !== "") {
+            return value;
+        }
+    }
+    return null;
+}
+
+function toNumber(value) {
+    if (value === undefined || value === null || String(value).trim() === "") {
+        return null;
+    }
+
+    const number = Number(String(value).replace(/,/g, "").trim());
+    return Number.isFinite(number) ? number : null;
+}
+
+function getOrCreateIndividualSchoolContainer(
+    modalElement,
+    modalName
+) {
+
+    if (!modalElement) {
+        return null;
+    }
+
+    let container =
+        modalElement.querySelector(
+            "#individualSchoolInfo"
+        );
+
+    if (container) {
+        return container;
+    }
+
+    if (!modalName) {
+        return null;
+    }
+
+    container =
+        document.createElement("div");
+
+    container.id =
+        "individualSchoolInfo";
+
+    container.style.display =
+        "none";
+
+    container.style.margin =
+        "10px 0 12px";
+
+    container.style.padding =
+        "10px 14px";
+
+    container.style.borderRadius =
+        "12px";
+
+    container.style.background =
+        "rgba(0, 100, 70, 0.06)";
+
+    container.style.border =
+        "1px solid rgba(0, 100, 70, 0.12)";
+
+    container.style.textAlign =
+        "center";
+
+    container.style.overflowWrap =
+        "anywhere";
+
+    modalName.insertAdjacentElement(
+        "afterend",
+        container
+    );
+
+    return container;
+}
+
+
+function renderIndividualSchool(
+    container,
+    school
+) {
+
+    if (!container) {
+        return;
+    }
+
+    const safeSchool =
+        String(
+            school || ""
+        ).trim();
+
+    if (!safeSchool) {
+
+        container.innerHTML = "";
+
+        container.style.display =
+            "none";
+
+        return;
+    }
+
+    const escape =
+        value =>
+            String(value ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+
+    container.innerHTML = `
+        <div style="
+            font-size:9px;
+            font-weight:800;
+            letter-spacing:1px;
+            text-transform:uppercase;
+            opacity:.62;
+            margin-bottom:4px;
+        ">
+            SCHOOL / ORGANIZATION
+        </div>
+
+        <div style="
+            font-size:14px;
+            font-weight:800;
+            line-height:1.3;
+        ">
+            ${escape(safeSchool)}
+        </div>
+    `;
+
+    container.style.display =
+        "block";
+}
+
+
+function getOrCreateBulkInfoContainer(modalElement) {
+
+    if (!modalElement) return null;
+
+    let container = modalElement.querySelector("#bulkRegistrationInfo");
+    if (container) return container;
+
+    const modalMessage = modalElement.querySelector("#modalMessage");
+    if (!modalMessage) return null;
+
+    container = document.createElement("div");
+    container.id = "bulkRegistrationInfo";
+    container.style.display = "none";
+    container.style.marginTop = "16px";
+    container.style.padding = "14px";
+    container.style.borderRadius = "16px";
+    container.style.background = "linear-gradient(145deg, rgba(255,255,255,.075), rgba(0,0,0,.16))";
+    container.style.border = "1px solid rgba(0, 220, 210, .18)";
+    container.style.boxShadow = "inset 2px 2px 8px rgba(255,255,255,.035), inset -3px -3px 10px rgba(0,0,0,.18)";
+    container.style.backdropFilter = "blur(10px)";
+    container.style.webkitBackdropFilter = "blur(10px)";
+    container.style.textAlign = "left";
+
+    modalMessage.insertAdjacentElement("afterend", container);
+    return container;
+}
+
+function renderBulkRegistrationInfo(container, info) {
+
+    if (!container) return;
+
+    if (!info) {
+        container.innerHTML = "";
+        container.style.display = "none";
+        return;
+    }
+
+    const escape = value => String(value ?? "—")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+    container.innerHTML = `
+        <div style="font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;opacity:.72;margin-bottom:10px;">BULK REGISTRATION</div>
+        <div style="font-size:15px;font-weight:800;line-height:1.25;margin-bottom:12px;overflow-wrap:anywhere;">${escape(info.school)}</div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">
+            <div style="padding:10px 8px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.06);text-align:center;">
+                <div style="font-size:9px;opacity:.62;font-weight:700;">HEADCOUNT</div>
+                <div style="font-size:20px;font-weight:900;margin-top:3px;">${escape(info.headcount)}</div>
+            </div>
+            <div style="padding:10px 8px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.06);text-align:center;">
+                <div style="font-size:9px;opacity:.62;font-weight:700;">PAYING</div>
+                <div style="font-size:20px;font-weight:900;margin-top:3px;">${escape(info.paying)}</div>
+            </div>
+            <div style="padding:10px 8px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.06);text-align:center;">
+                <div style="font-size:9px;opacity:.62;font-weight:700;">FREE</div>
+                <div style="font-size:20px;font-weight:900;margin-top:3px;">${escape(info.free)}</div>
+            </div>
+        </div>
+    `;
+
+    container.style.display = "block";
 }
 
 
@@ -2074,6 +2379,16 @@ function handleOverrideResponse(
         )
             .trim();
 
+    const school =
+        String(
+            data.school ||
+            data.schoolName ||
+            data.organization ||
+            data.institution ||
+            ""
+        )
+            .trim();
+
 
     /* ---------------------------------------------------------
        SUCCESS
@@ -2112,7 +2427,9 @@ function handleOverrideResponse(
             safeName,
             attendeeId,
             safeTimestamp,
-            message
+            message,
+            null,
+            school
         );
 
 
@@ -2165,7 +2482,9 @@ function handleOverrideResponse(
             safeName,
             attendeeId,
             safeTimestamp,
-            message
+            message,
+            null,
+            school
         );
 
 
@@ -2237,7 +2556,9 @@ function handleOverrideResponse(
         safeName,
         attendeeId,
         safeTimestamp,
-        message
+        message,
+        null,
+        school
     );
 
 }
