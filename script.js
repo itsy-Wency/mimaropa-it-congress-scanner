@@ -818,6 +818,13 @@ function handleResponse(res) {
             .trim();
 
 
+    const school =
+        String(
+            data.school || ""
+        )
+            .trim();
+
+
     const timestamp =
         String(
             data.timestamp || ""
@@ -945,7 +952,8 @@ function handleResponse(res) {
             attendeeId,
             safeTimestamp,
             safeMessage,
-            bulkInfo
+            bulkInfo,
+            school
 
         );
 
@@ -1004,7 +1012,8 @@ function handleResponse(res) {
             attendeeId,
             safeTimestamp,
             safeMessage,
-            bulkInfo
+            bulkInfo,
+            school
         );
 
 
@@ -1060,7 +1069,9 @@ function handleResponse(res) {
             safeName,
             attendeeId,
             safeTimestamp,
-            safeMessage
+            safeMessage,
+            null,
+            school
         );
 
 
@@ -1109,7 +1120,9 @@ function handleResponse(res) {
         safeName,
         attendeeId,
         safeTimestamp,
-        safeMessage
+        safeMessage,
+        null,
+        school
     );
 
 
@@ -1326,7 +1339,8 @@ function showResultModal(
     attendeeId,
     timestamp,
     message,
-    bulkInfo = null
+    bulkInfo = null,
+    school = ""
 ) {
     const modalElement = document.getElementById("resultModal");
 
@@ -1356,6 +1370,13 @@ function showResultModal(
 
     const modalMessage =
         document.getElementById("modalMessage");
+
+    /* Individual school block (used only for individual registrations). */
+    const individualSchool =
+        modalElement.querySelector(".individual-school");
+
+    const individualModalSchool =
+        document.getElementById("individualModalSchool");
 
 
     /* BULK REGISTRATION MODAL ELEMENTS */
@@ -1508,6 +1529,11 @@ function showResultModal(
         /* Show ONLY the previous working bulk summary. */
         bulkRegistrationInfo.style.display = "block";
 
+        /* Bulk registrations use the bulk summary school field. */
+        if (individualSchool) {
+            individualSchool.style.display = "none";
+        }
+
         const bulkSchoolLabel =
             bulkRegistrationInfo.querySelector(".bulk-school .bulk-label");
 
@@ -1564,9 +1590,18 @@ function showResultModal(
 
     else {
 
-        /* Hide bulk information for individual attendees. */
+        /* Individual registration: display the actual School value from Column F. */
         if (bulkRegistrationInfo) {
             bulkRegistrationInfo.style.display = "none";
+        }
+
+        if (individualSchool) {
+            individualSchool.style.display = "block";
+        }
+
+        if (individualModalSchool) {
+            individualModalSchool.textContent =
+                String(school || "").trim() || "-";
         }
 
     }
@@ -2106,6 +2141,12 @@ function handleOverrideResponse(
         )
             .trim();
 
+    const school =
+        String(
+            data.school || ""
+        )
+            .trim();
+
 
     const timestamp =
         String(
@@ -2159,7 +2200,9 @@ function handleOverrideResponse(
             safeName,
             attendeeId,
             safeTimestamp,
-            message
+            message,
+            null,
+            school
         );
 
 
@@ -2212,7 +2255,9 @@ function handleOverrideResponse(
             safeName,
             attendeeId,
             safeTimestamp,
-            message
+            message,
+            null,
+            school
         );
 
 
