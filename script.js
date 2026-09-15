@@ -835,8 +835,14 @@ function handleResponse(res) {
        BULK REGISTRATION INFORMATION
     --------------------------------------------------------- */
 
+    const bulkFlag =
+        data.isBulk === true ||
+        String(data.isBulk || "").toLowerCase() === "true" ||
+        String(data.isBulk || "") === "1" ||
+        String(data.attendeeId || "").toUpperCase().startsWith("ATT-BLK-");
+
     const bulkInfo =
-        data.isBulk === true
+        bulkFlag
             ? {
                 isBulk: true,
 
@@ -1352,6 +1358,24 @@ function showResultModal(
         document.getElementById("modalMessage");
 
 
+    /* BULK REGISTRATION MODAL ELEMENTS */
+
+    const bulkRegistrationInfo =
+        document.getElementById("bulkRegistrationInfo");
+
+    const modalSchool =
+        document.getElementById("modalSchool");
+
+    const modalHeadcount =
+        document.getElementById("modalHeadcount");
+
+    const modalPaying =
+        document.getElementById("modalPaying");
+
+    const modalFree =
+        document.getElementById("modalFree");
+
+
     /* -----------------------------------------------------
        NORMALIZE DATA
     ----------------------------------------------------- */
@@ -1471,7 +1495,7 @@ function showResultModal(
             safeMessage;
     }
 
-        /* ---------------------------------------------------------
+    /* ---------------------------------------------------------
        BULK REGISTRATION SUMMARY
     --------------------------------------------------------- */
 
@@ -1481,60 +1505,68 @@ function showResultModal(
         bulkInfo.isBulk === true
     ) {
 
-        bulkRegistrationInfo.style.display =
-            "block";
+        /* Show ONLY the previous working bulk summary. */
+        bulkRegistrationInfo.style.display = "block";
 
+        const bulkSchoolLabel =
+            bulkRegistrationInfo.querySelector(".bulk-school .bulk-label");
+
+        if (bulkSchoolLabel) {
+            bulkSchoolLabel.textContent = "BULK REGISTRATION";
+        }
 
         if (modalSchool) {
-
             modalSchool.textContent =
-                bulkInfo.school ||
-                "School Not Specified";
-
+                bulkInfo.school || "School Not Specified";
         }
-
 
         if (modalHeadcount) {
-
             modalHeadcount.textContent =
-                Number(
-                    bulkInfo.headcount || 0
-                ).toLocaleString();
-
+                Number(bulkInfo.headcount || 0).toLocaleString();
         }
-
 
         if (modalPaying) {
-
             modalPaying.textContent =
-                Number(
-                    bulkInfo.payingParticipants || 0
-                ).toLocaleString();
-
+                Number(bulkInfo.payingParticipants || 0).toLocaleString();
         }
 
-
         if (modalFree) {
-
             modalFree.textContent =
-                Number(
-                    bulkInfo.free || 0
-                ).toLocaleString();
+                Number(bulkInfo.free || 0).toLocaleString();
+        }
 
+        /* Remove any duplicate generic placeholder outside the bulk box. */
+        const modalContent =
+            modalElement.querySelector(".modal-content");
+
+        if (modalContent) {
+            modalContent.querySelectorAll("*").forEach(element => {
+                if (bulkRegistrationInfo.contains(element)) {
+                    return;
+                }
+
+                const text =
+                    String(element.textContent || "")
+                        .replace(/\s+/g, " ")
+                        .trim()
+                        .toUpperCase();
+
+                if (
+                    text === "SCHOOL / ORGANIZATION" ||
+                    text === "SCHOOL / ORGANIZATION -"
+                ) {
+                    element.style.display = "none";
+                }
+            });
         }
 
     }
 
     else {
 
-        /* Hide bulk information for
-           individual attendees */
-
+        /* Hide bulk information for individual attendees. */
         if (bulkRegistrationInfo) {
-
-            bulkRegistrationInfo.style.display =
-                "none";
-
+            bulkRegistrationInfo.style.display = "none";
         }
 
     }
