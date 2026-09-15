@@ -10,7 +10,7 @@
 ========================================================= */
 
 const DEPLOYED_WEB_APP_URL =
-    "https://script.google.com/macros/s/AKfycbw6aqArIX_eXtrfBDe5_iiqX-97-Zfwbgt3K_P21P56jP0-0tjl8PjKf1o6cyESCwaqSw/exec";
+    "https://script.google.com/macros/s/AKfycbw_HEwlUvhGQBY-Us_hoLQzy1FdUlL4ewo5k9-zDRLoq2FvRBplJG8lLAoeiGLKyqa60w/exec";
 
 
 /* =========================================================
@@ -847,8 +847,9 @@ function handleResponse(res) {
         )
             .trim();
 
-
-    // School is returned by Code.gs for BOTH individual and bulk scans.
+    // SCHOOL / ORGANIZATION returned by Code.gs.
+    // For individual attendees this is Column F of
+    // "Individual Attendees".
     const school =
         String(
             data.school ||
@@ -925,8 +926,8 @@ function handleResponse(res) {
             safeName,
             safeTimestamp,
             safeMessage,
-            bulkInfo,
-            school
+            school,
+            bulkInfo
         );
 
 
@@ -937,8 +938,8 @@ function handleResponse(res) {
             attendeeId,
             safeTimestamp,
             safeMessage,
-            bulkInfo,
-            school
+            school,
+            bulkInfo
         );
 
 
@@ -986,8 +987,8 @@ function handleResponse(res) {
             safeName,
             safeTimestamp,
             safeMessage,
-            bulkInfo,
-            school
+            school,
+            bulkInfo
         );
 
 
@@ -1105,7 +1106,9 @@ function handleResponse(res) {
         safeName,
         attendeeId,
         safeTimestamp,
-        safeMessage
+        safeMessage,
+        school,
+        null
     );
 
 
@@ -1329,8 +1332,8 @@ function showResultModal(
     attendeeId,
     timestamp,
     message,
-    bulkInfo = null,
-    school = ""
+    school = "",
+    bulkInfo = null
 ) {
     const modalElement = document.getElementById("resultModal");
 
@@ -1366,13 +1369,6 @@ function showResultModal(
         getOrCreateBulkInfoContainer(modalElement);
 
 
-    const individualSchoolContainer =
-        getOrCreateIndividualSchoolContainer(
-            modalElement,
-            modalName
-        );
-
-
     /* -----------------------------------------------------
        NORMALIZE DATA
     ----------------------------------------------------- */
@@ -1398,12 +1394,8 @@ function showResultModal(
             "Please try again."
         );
 
-
     const safeSchool =
-        String(
-            school ||
-            ""
-        ).trim();
+        String(school || "").trim();
 
 
     /* -----------------------------------------------------
@@ -1499,12 +1491,13 @@ function showResultModal(
             safeMessage;
     }
 
-
-    renderIndividualSchoolInfo(
-        individualSchoolContainer,
-        safeSchool,
-        bulkInfo
-    );
+    // IMPORTANT:
+    // Display the actual school/organization returned by Code.gs.
+    // Do not leave the HTML placeholder "SCHOOL / ORGANIZATION -".
+    if (modalSchool) {
+        modalSchool.textContent =
+            safeSchool || "-";
+    }
 
 
     renderBulkRegistrationInfo(
@@ -1580,112 +1573,6 @@ function showResultModal(
 
 
 /* =========================================================
-   INDIVIDUAL SCHOOL DISPLAY
-========================================================= */
-
-function getOrCreateIndividualSchoolContainer(
-    modalElement,
-    modalName
-) {
-
-    let container =
-        modalElement.querySelector(
-            "#individualSchoolDisplay"
-        );
-
-    if (container) {
-        return container;
-    }
-
-    container =
-        document.createElement("div");
-
-    container.id =
-        "individualSchoolDisplay";
-
-    container.className =
-        "individual-school-display";
-
-    container.innerHTML = `
-        <div class="individual-school-label">
-            SCHOOL / ORGANIZATION
-        </div>
-        <div class="individual-school-name"></div>
-    `;
-
-    if (!document.getElementById("individualSchoolDisplayStyles")) {
-        const style = document.createElement("style");
-        style.id = "individualSchoolDisplayStyles";
-        style.textContent = `
-            #individualSchoolDisplay {
-                margin: 4px 0 12px;
-                text-align: center;
-                line-height: 1.25;
-            }
-            #individualSchoolDisplay .individual-school-label {
-                font-size: 11px;
-                font-weight: 700;
-                letter-spacing: .6px;
-                opacity: .72;
-                margin-bottom: 3px;
-            }
-            #individualSchoolDisplay .individual-school-name {
-                font-size: 14px;
-                font-weight: 700;
-                overflow-wrap: anywhere;
-            }
-        `;
-        document.head.appendChild(style);
-    }
-
-    if (modalName) {
-        modalName.insertAdjacentElement(
-            "afterend",
-            container
-        );
-    } else {
-        modalElement.appendChild(container);
-    }
-
-    return container;
-}
-
-
-function renderIndividualSchoolInfo(
-    container,
-    school,
-    bulkInfo
-) {
-
-    if (!container) {
-        return;
-    }
-
-    // Bulk registrations have their school displayed inside the
-    // dedicated BULK REGISTRATION summary.
-    if (
-        bulkInfo &&
-        bulkInfo.isBulk === true
-    ) {
-        container.style.display = "none";
-        return;
-    }
-
-    const nameElement =
-        container.querySelector(
-            ".individual-school-name"
-        );
-
-    if (nameElement) {
-        nameElement.textContent =
-            school || "School Not Specified";
-    }
-
-    container.style.display = "block";
-}
-
-
-/* =========================================================
    BULK REGISTRATION DATA
 ========================================================= */
 
@@ -1743,22 +1630,11 @@ function normalizeBulkInfo(data) {
         paying = Math.max(0, headcount - free);
     }
 
-    // Only show the BULK panel when the backend explicitly identifies
-    // the scan as bulk or supplies actual bulk registration counts.
-    // An individual attendee also has a school, so school alone must
-    // NOT make the response appear as a bulk registration.
-    const isExplicitBulk =
-        data.isBulk === true ||
-        (data.bulkInfo && data.bulkInfo.isBulk === true);
-
-    const hasBulkCounts =
+    const hasBulkData =
+        school !== null ||
         headcount !== null ||
         free !== null ||
         paying !== null;
-
-    const hasBulkData =
-        isExplicitBulk ||
-        hasBulkCounts;
 
     if (!hasBulkData) {
         return null;
@@ -2341,17 +2217,6 @@ function handleOverrideResponse(
             .trim();
 
 
-    const school =
-        String(
-            data.school ||
-            data.schoolName ||
-            data.organization ||
-            data.institution ||
-            ""
-        )
-            .trim();
-
-
     /* ---------------------------------------------------------
        SUCCESS
     --------------------------------------------------------- */
@@ -2380,8 +2245,8 @@ function handleOverrideResponse(
             safeName,
             safeTimestamp,
             message,
-            null,
-            school
+            school,
+            null
         );
 
 
@@ -2392,8 +2257,8 @@ function handleOverrideResponse(
             attendeeId,
             safeTimestamp,
             message,
-            null,
-            school
+            school,
+            null
         );
 
 
@@ -2437,8 +2302,8 @@ function handleOverrideResponse(
             safeName,
             safeTimestamp,
             message,
-            null,
-            school
+            school,
+            null
         );
 
 
@@ -2449,8 +2314,8 @@ function handleOverrideResponse(
             attendeeId,
             safeTimestamp,
             message,
-            null,
-            school
+            school,
+            null
         );
 
 
@@ -2522,7 +2387,9 @@ function handleOverrideResponse(
         safeName,
         attendeeId,
         safeTimestamp,
-        message
+        message,
+        school,
+        null
     );
 
 }
