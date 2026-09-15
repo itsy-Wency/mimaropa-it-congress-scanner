@@ -1,0 +1,1646 @@
+/**
+ * 8th MIMAROPA Regional IT Congress - High-Speed ID-Only Backend
+ */
+
+const EMAIL_HEADER_FILE_ID = "1ouxXQqKRxySPFjAD2etW8Yb6yPU5P9w1";
+const SPREADSHEET_ID = "19SIEZf0TOLABwDyvqcs8UzHYc8HzS8MrU-6TOHkpeLg";
+
+function getSpreadsheet() {
+  let ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  }
+  return ss;
+}
+//old version
+// function doGet(e) {
+//   return HtmlService.createTemplateFromFile('Index')
+//     .evaluate()
+//     .setTitle('8th MIMAROPA Regional IT Congress')
+//     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no')
+//     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+// }
+
+//new version 
+//for two possible request (1)app script url (2)attendee api
+//response = id and name 
+function doGet(e) {
+
+  // API endpoint for attendee list
+  if (e && e.parameter && e.parameter.action === "attendees") {
+    return ContentService
+      .createTextOutput(JSON.stringify(getRegisteredAttendees()))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // Normal web app page
+  return HtmlService
+    .createTemplateFromFile('Index')
+    .evaluate()
+    .setTitle('8th MIMAROPA Regional IT Congress')
+    .addMetaTag(
+      'viewport',
+      'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'
+    )
+    .setXFrameOptionsMode(
+      HtmlService.XFrameOptionsMode.ALLOWALL
+    );
+}
+//modified
+function doPost(e) {
+
+  try {
+
+    const contents = JSON.parse(e.postData.contents);
+
+    // Normal scan
+    if (contents.action === "scan") {
+
+      const result = processScan(
+        contents.attendeeId,
+        contents.session
+      );
+
+      return ContentService
+        .createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+
+    // Manual override
+    if (contents.action === "manualOverride") {
+
+      const result = manualOverride(
+        contents.attendeeId,
+        contents.session,
+        contents.pin
+      );
+
+      return ContentService
+        .createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        status: "ERROR",
+        displayStatus: "Try Again",
+        message: "Invalid action."
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+
+  } catch (err) {
+
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        status: "ERROR",
+        displayStatus: "Try Again",
+        message: "Server Error: " + err.toString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+//expose getRegisteredAttendees() thru web app
+function doGetAttendees() {
+  return ContentService
+    .createTextOutput(JSON.stringify(getRegisteredAttendees()))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * GOOGLE FORM SUBMISSION TRIGGER
+ * Creates attendee record and sends QR email.
+ */
+function onFormSubmit(e) {
+  try {
+
+    let sourceSheet;
+    let row;
+
+    // Normal trigger execution
+    if (e && e.range) {
+      sourceSheet = e.range.getSheet();
+      row = e.range.getRow();
+    }
+
+    // Manual test / fallback
+    else {
+      const ss = getSpreadsheet();
+
+      sourceSheet = ss.getSheetByName("Form Responses 1");
+
+      if (!sourceSheet) {
+        throw new Error('Sheet "Form Responses 1" was not found.');
+      }
+
+      row = sourceSheet.getLastRow();
+    }
+
+    const sheetName = sourceSheet.getName();
+
+    console.log("=================================");
+    console.log("FORM SUBMISSION STARTED");
+    console.log("Sheet: " + sheetName);
+    console.log("Row: " + row);
+    console.log("=================================");
+
+    if (sheetName === "Form Responses 1") {
+
+      processIndividualSubmission(sourceSheet, row);
+
+    }
+
+    else if (sheetName === "Form Responses 2") {
+
+      processGroupSubmission(sourceSheet, row);
+
+    }
+
+    else {
+
+      throw new Error(
+        "Unsupported form response sheet: " + sheetName
+      );
+
+    }
+
+    console.log("FORM SUBMISSION COMPLETED SUCCESSFULLY");
+
+  }
+
+  catch (err) {
+
+    console.error(
+      "================================="
+    );
+
+    console.error(
+      "FORM SUBMISSION ERROR"
+    );
+
+    console.error(
+      err.toString()
+    );
+
+    console.error(
+      "================================="
+    );
+
+    // Re-throw so Apps Script records the actual error
+    // instead of silently hiding it.
+    throw err;
+  }
+}
+
+function processIndividualSubmission(sourceSheet, row) {
+  const ss = getSpreadsheet();
+  const targetSheet = ss.getSheetByName("Individual Attendees");
+  if (!targetSheet) return;
+
+  const headers = sourceSheet.getRange(1, 1, 1, sourceSheet.getLastColumn()).getValues()[0];
+  const rowData = sourceSheet.getRange(row, 1, 1, sourceSheet.getLastColumn()).getValues()[0];
+
+  let email = "", firstName = "", lastName = "", contact = "", school = "", certName = "";
+
+  for (let col = 0; col < headers.length; col++) {
+    const h = String(headers[col]).toUpperCase().trim();
+    const val = String(rowData[col] || "").trim();
+
+    if (h.includes("EMAIL") && !email && val.includes("@")) email = val;
+    else if (h.includes("FIRST NAME")) firstName = val.toUpperCase();
+    else if (h.includes("LAST NAME")) lastName = val.toUpperCase();
+    else if (h.includes("CONTACT")) contact = val;
+    else if (h.includes("CERTIFICATE") || h.includes("NAME TO APPEAR")) certName = val.toUpperCase();
+    else if ((h.includes("SCHOOL") || h.includes("INSTITUTION")) && !h.includes("ADDRESS")) school = val.toUpperCase();
+  }
+
+  const fullName = `${firstName} ${lastName}`.trim().toUpperCase() || "ATTENDEE";
+  if (!certName) certName = fullName;
+
+  const surnameClean = (lastName || fullName.split(" ").pop() || "ATTENDEE").replace(/[^A-Z]/gi, '').toUpperCase();
+  const uniqueId = generateIncrementalId(targetSheet, "ATT-IND-" + surnameClean);
+
+  const targetRow = targetSheet.getLastRow() + 1;
+  const qrUrl = "https://quickchart.io/qr?text=" + encodeURIComponent(uniqueId) + "&size=300";
+
+  targetSheet.getRange(targetRow, 1, 1, 12).setValues([[
+    uniqueId, fullName, certName, email, contact, school, "ABSENT", "", "PENDING", "", "PENDING", ""
+  ]]);
+
+  SpreadsheetApp.flush();
+
+  if (email && email.includes("@")) {
+    sendQrEmail(email, fullName, uniqueId, qrUrl, false);
+  }
+}
+
+function processGroupSubmission(sourceSheet, row) {
+  const ss = getSpreadsheet();
+  const targetSheet = ss.getSheetByName("Group_Bulk Attendees");
+  if (!targetSheet) return;
+
+  const headers = sourceSheet.getRange(1, 1, 1, sourceSheet.getLastColumn()).getValues()[0];
+  const rowData = sourceSheet.getRange(row, 1, 1, sourceSheet.getLastColumn()).getValues()[0];
+
+  let email = "", primaryName = "", school = "", contact = "";
+
+  for (let col = 0; col < headers.length; col++) {
+    const h = String(headers[col]).toUpperCase().trim();
+    const val = String(rowData[col] || "").trim();
+
+    if (h.includes("EMAIL") && !email && val.includes("@")) email = val;
+    else if (h.includes("NAME")) primaryName = val.toUpperCase();
+    else if (h.includes("SCHOOL") || h.includes("ORGANIZATION")) school = val.toUpperCase();
+    else if (h.includes("CONTACT")) contact = val;
+  }
+
+  if (!primaryName) primaryName = "GROUP LEAD";
+
+  const nameParts = primaryName.trim().split(" ");
+  const surnameClean = (nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0]).replace(/[^A-Z]/gi, '').toUpperCase() || "GROUP";
+  const uniqueId = generateIncrementalId(targetSheet, "ATT-BLK-" + surnameClean);
+
+  const targetRow = targetSheet.getLastRow() + 1;
+  const qrUrl = "https://quickchart.io/qr?text=" + encodeURIComponent(uniqueId) + "&size=300";
+
+  targetSheet.getRange(targetRow, 1, 1, 13).setValues([[
+    uniqueId, primaryName, primaryName, email, contact, school, "ABSENT", "", "PENDING", "", "PENDING", "", 1
+  ]]);
+
+  SpreadsheetApp.flush();
+
+  if (email && email.includes("@")) {
+    sendQrEmail(email, primaryName, uniqueId, qrUrl, true);
+  }
+}
+
+function generateIncrementalId(sheet, prefix) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return prefix + "1";
+
+  const data = sheet.getRange("A2:A" + lastRow).getValues();
+  let maxCount = 0;
+
+  for (let i = 0; i < data.length; i++) {
+    const currentId = String(data[i][0]).trim().toUpperCase();
+    if (currentId.startsWith(prefix)) {
+      const numPart = currentId.replace(prefix, "");
+      const num = parseInt(numPart, 10);
+      if (!isNaN(num) && num > maxCount) {
+        maxCount = num;
+      }
+    }
+  }
+  return prefix + (maxCount + 1);
+}
+
+/**
+ * HIGH-SPEED ATTENDEE ID FETCH (COLUMNS A & B ONLY)
+ */
+function getRegisteredAttendees() {
+  const ss = getSpreadsheet();
+  const list = [];
+
+  const indSheet = ss.getSheetByName("Individual Attendees");
+  if (indSheet && indSheet.getLastRow() > 1) {
+    const data = indSheet.getRange("A2:B" + indSheet.getLastRow()).getValues();
+    for (let i = 0; i < data.length; i++) {
+      if (data[i][0]) {
+        list.push({ id: String(data[i][0]).trim(), name: String(data[i][1]).trim() });
+      }
+    }
+  }
+
+  const grpSheet = ss.getSheetByName("Group_Bulk Attendees");
+  if (grpSheet && grpSheet.getLastRow() > 1) {
+    const data = grpSheet.getRange("A2:B" + grpSheet.getLastRow()).getValues();
+    for (let i = 0; i < data.length; i++) {
+      if (data[i][0]) {
+        list.push({ id: String(data[i][0]).trim(), name: String(data[i][1]).trim() });
+      }
+    }
+  }
+
+  return list;
+}
+
+/**
+ * FAST MULTI-DEVICE SCANNER LOOKUP
+ */
+
+//modified
+function processScan(attendeeId, session) {
+
+  const lock = LockService.getScriptLock();
+
+  try {
+
+    lock.waitLock(3000);//important when several scanning devices are operating simultaneously
+
+    const ss = getSpreadsheet();
+
+    const cleanId = String(attendeeId || "")
+      .trim()
+      .toUpperCase();
+
+    const sessionType = String(session || "")
+      .trim()
+      .toUpperCase();
+
+
+    // No ID
+    if (!cleanId) {
+
+      return {
+        status: "INVALID",
+        displayStatus: "Try Again",
+        name: "",
+        attendeeId: "",
+        timestamp: "",
+        message: "No Attendee ID was provided."
+      };
+    }
+
+
+    // Check Individual Attendees
+    let res = checkAndRecordStation(
+      ss.getSheetByName("Individual Attendees"),
+      cleanId,
+      sessionType
+    );
+
+    if (res.found) {
+      return res.result;
+    }
+
+
+    // Check Group Attendees
+    res = checkAndRecordStation(
+      ss.getSheetByName("Group_Bulk Attendees"),
+      cleanId,
+      sessionType
+    );
+
+    if (res.found) {
+      return res.result;
+    }
+
+
+    // Attendee not found
+    return {
+      status: "INVALID",
+      displayStatus: "Try Again",
+      name: "",
+      attendeeId: cleanId,
+      timestamp: "",
+      message: "Attendee ID was not found."
+    };
+
+  } catch (e) {
+
+    return {
+      status: "ERROR",
+      displayStatus: "Try Again",
+      name: "",
+      attendeeId: attendeeId || "",
+      timestamp: "",
+      message: "System is busy. Please scan again."
+    };
+
+  } finally {
+
+    try {
+      lock.releaseLock();
+    } catch (err) {}
+
+  }
+}
+//modified
+function checkAndRecordStation(sheet, targetId, sessionType) {
+
+  if (!sheet || sheet.getLastRow() < 2) {
+    return { found: false };
+  }
+
+  // Find attendee ID
+  const finder = sheet
+    .getRange("A:A")
+    .createTextFinder(targetId)
+    .matchEntireCell(true)
+    .matchCase(false);
+
+  const cell = finder.findNext();
+
+  if (!cell) {
+    return { found: false };
+  }
+
+  const rowIndex = cell.getRow();
+
+  if (rowIndex < 2) {
+    return { found: false };
+  }
+
+  // Get attendee information
+  const rowData = sheet
+    .getRange(rowIndex, 1, 1, 12)
+    .getValues()[0];
+
+  const attendeeId = String(rowData[0] || "").trim();
+  const name = String(rowData[1] || "").trim();
+
+  const attStatus = String(rowData[6] || "").toUpperCase();
+  const attTime   = String(rowData[7] || "");
+
+  const amStatus = String(rowData[8] || "").toUpperCase();
+  const amTime   = String(rowData[9] || "");
+
+  const pmStatus = String(rowData[10] || "").toUpperCase();
+  const pmTime   = String(rowData[11] || "");
+
+  const timestamp = Utilities.formatDate(
+    new Date(),
+    Session.getScriptTimeZone(),
+    "yyyy-MM-dd hh:mm:ss a"
+  );
+
+
+ 
+  // ATTENDANCE
+ 
+
+  if (sessionType === "ATTENDANCE") {
+
+    // Duplicate
+    if (attStatus === "PRESENT") {
+
+      return {
+        found: true,
+        result: {
+          status: "ALREADY_SCANNED",
+          displayStatus: "Already Scanned",
+          name: name,
+          attendeeId: attendeeId,
+          timestamp: attTime,
+          message: "Attendance has already been recorded."
+        }
+      };
+    }
+
+    // Record attendance
+    sheet
+      .getRange(rowIndex, 7, 1, 2)
+      .setValues([
+        ["PRESENT", timestamp]
+      ]);
+
+    return {
+      found: true,
+      result: {
+        status: "SUCCESS",
+        displayStatus: "Scan Successfully",
+        name: name,
+        attendeeId: attendeeId,
+        timestamp: timestamp,
+        message: "Attendance recorded successfully."
+      }
+    };
+  }
+
+
+
+  // AM SNACK
+ 
+
+  if (sessionType === "AM_SNACK") {
+
+    // Attendance required first
+    if (attStatus !== "PRESENT") {
+
+      return {
+        found: true,
+        result: {
+          status: "BLOCKED",
+          displayStatus: "Try Again",
+          name: name,
+          attendeeId: attendeeId,
+          timestamp: timestamp,
+          message: "Attendee must scan Attendance first."
+        }
+      };
+    }
+
+    // Duplicate
+    if (amStatus === "CLAIMED") {
+
+      return {
+        found: true,
+        result: {
+          status: "ALREADY_SCANNED",
+          displayStatus: "Already Scanned",
+          name: name,
+          attendeeId: attendeeId,
+          timestamp: amTime,
+          message: "AM Snack has already been claimed."
+        }
+      };
+    }
+
+    // Record AM Snack
+    sheet
+      .getRange(rowIndex, 9, 1, 2)
+      .setValues([
+        ["CLAIMED", timestamp]
+      ]);
+
+    return {
+      found: true,
+      result: {
+        status: "SUCCESS",
+        displayStatus: "Scan Successfully",
+        name: name,
+        attendeeId: attendeeId,
+        timestamp: timestamp,
+        message: "AM Snack recorded successfully."
+      }
+    };
+  }
+
+
+
+  // PM SNACK
+
+
+  if (sessionType === "PM_SNACK") {
+
+    // Attendance required
+    if (attStatus !== "PRESENT") {
+
+      return {
+        found: true,
+        result: {
+          status: "BLOCKED",
+          displayStatus: "Try Again",
+          name: name,
+          attendeeId: attendeeId,
+          timestamp: timestamp,
+          message: "Attendee must scan Attendance first."
+        }
+      };
+    }
+
+    // AM Snack required
+    if (amStatus !== "CLAIMED") {
+
+      return {
+        found: true,
+        result: {
+          status: "BLOCKED",
+          displayStatus: "Try Again",
+          name: name,
+          attendeeId: attendeeId,
+          timestamp: timestamp,
+          message: "Attendee must claim AM Snack first."
+        }
+      };
+    }
+
+    // Duplicate
+    if (pmStatus === "CLAIMED") {
+
+      return {
+        found: true,
+        result: {
+          status: "ALREADY_SCANNED",
+          displayStatus: "Already Scanned",
+          name: name,
+          attendeeId: attendeeId,
+          timestamp: pmTime,
+          message: "PM Snack has already been claimed."
+        }
+      };
+    }
+
+    // Record PM Snack
+    sheet
+      .getRange(rowIndex, 11, 1, 2)
+      .setValues([
+        ["CLAIMED", timestamp]
+      ]);
+
+    return {
+      found: true,
+      result: {
+        status: "SUCCESS",
+        displayStatus: "Scan Successfully",
+        name: name,
+        attendeeId: attendeeId,
+        timestamp: timestamp,
+        message: "PM Snack recorded successfully."
+      }
+    };
+  }
+
+
+  
+  // INVALID SESSION
+  
+
+  return {
+    found: true,
+    result: {
+      status: "ERROR",
+      displayStatus: "Try Again",
+      name: name,
+      attendeeId: attendeeId,
+      timestamp: timestamp,
+      message: "Invalid station requested."
+    }
+  };
+}
+
+//modified
+/**
+ * SEND OFFICIAL QR EVENT PASS
+ */
+function sendQrEmail(
+  recipientEmail,
+  fullName,
+  attendeeId,
+  qrUrl,
+  isGroupLead = false
+) {
+
+  console.log("=================================");
+  console.log("QR EMAIL PROCESS STARTED");
+  console.log("=================================");
+
+  try {
+
+    // --------------------------------------------------
+    // VALIDATE EMAIL
+    // --------------------------------------------------
+
+    recipientEmail = String(recipientEmail || "").trim();
+    fullName = String(fullName || "ATTENDEE").trim();
+    attendeeId = String(attendeeId || "").trim();
+
+    if (!recipientEmail) {
+      throw new Error("Recipient email is empty.");
+    }
+
+    if (!recipientEmail.includes("@")) {
+      throw new Error(
+        "Invalid recipient email: " + recipientEmail
+      );
+    }
+
+    if (!attendeeId) {
+      throw new Error(
+        "Attendee ID is empty."
+      );
+    }
+
+
+    console.log(
+      "Recipient: " + recipientEmail
+    );
+
+    console.log(
+      "Name: " + fullName
+    );
+
+    console.log(
+      "Attendee ID: " + attendeeId
+    );
+
+
+    // --------------------------------------------------
+    // GENERATE QR URL
+    // --------------------------------------------------
+
+    if (!qrUrl) {
+
+      qrUrl =
+        "https://quickchart.io/qr?text=" +
+        encodeURIComponent(attendeeId) +
+        "&size=300";
+
+    }
+
+    console.log(
+      "QR URL: " + qrUrl
+    );
+
+
+    // --------------------------------------------------
+    // DOWNLOAD QR IMAGE
+    // --------------------------------------------------
+
+    const qrResponse = UrlFetchApp.fetch(
+      qrUrl,
+      {
+        method: "get",
+        muteHttpExceptions: true,
+        followRedirects: true
+      }
+    );
+
+    const responseCode =
+      qrResponse.getResponseCode();
+
+    console.log(
+      "QR HTTP Response: " + responseCode
+    );
+
+
+    if (responseCode !== 200) {
+
+      const responseText =
+        qrResponse
+          .getContentText()
+          .substring(0, 500);
+
+      throw new Error(
+        "QR generation failed. HTTP " +
+        responseCode +
+        ". Response: " +
+        responseText
+      );
+
+    }
+
+
+    const qrBlob =
+      qrResponse
+        .getBlob()
+        .setName(
+          "QRCode_" +
+          attendeeId +
+          ".png"
+        );
+
+
+    // --------------------------------------------------
+    // EMAIL SUBJECT
+    // --------------------------------------------------
+
+    const subject =
+      "Your Official Event Pass - 8th MIMAROPA Regional IT Congress";
+
+
+    // --------------------------------------------------
+    // EMAIL BODY
+    // --------------------------------------------------
+
+    const safeName =
+      escapeHtml(fullName);
+
+    const safeId =
+      escapeHtml(attendeeId);
+
+
+    const registrationType =
+      isGroupLead
+        ? "Group Registration"
+        : "Individual Registration";
+
+
+    const htmlBody = `
+
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
+
+<title>8th MIMAROPA Regional IT Congress</title>
+
+</head>
+
+
+<body style="
+    margin:0;
+    padding:0;
+    background:#f1f7f5;
+    font-family:Arial,Helvetica,sans-serif;
+">
+
+<table
+    width="100%"
+    cellpadding="0"
+    cellspacing="0"
+    border="0"
+    style="
+        background:#f1f7f5;
+        padding:30px 12px;
+    "
+>
+
+<tr>
+
+<td align="center">
+
+
+<table
+    width="100%"
+    cellpadding="0"
+    cellspacing="0"
+    border="0"
+    style="
+        max-width:620px;
+        background:#ffffff;
+        border-radius:18px;
+        overflow:hidden;
+        border:1px solid #dce9e4;
+    "
+>
+
+
+<!-- ================================= -->
+<!-- HEADER -->
+<!-- ================================= -->
+
+<tr>
+
+<td
+    style="
+        background:
+        linear-gradient(
+            135deg,
+            #061f2d 0%,
+            #083b48 45%,
+            #0a8f65 100%
+        );
+        padding:28px 24px;
+        text-align:center;
+    "
+>
+
+<div
+    style="
+        color:#ffffff;
+        font-size:12px;
+        font-weight:bold;
+        letter-spacing:2px;
+        margin-bottom:8px;
+    "
+>
+8TH MIMAROPA REGIONAL IT CONGRESS
+</div>
+
+
+<div
+    style="
+        color:#ffffff;
+        font-size:30px;
+        font-weight:900;
+        line-height:1.1;
+    "
+>
+CODE <span style="color:#16e6a5;">GREEN</span> 2026
+</div>
+
+
+<div
+    style="
+        color:#c9e8df;
+        font-size:13px;
+        margin-top:8px;
+    "
+>
+Empowering Sustainable Innovation Through Information Technology
+</div>
+
+</td>
+
+</tr>
+
+
+<!-- ================================= -->
+<!-- CONTENT -->
+<!-- ================================= -->
+
+<tr>
+
+<td
+    style="
+        padding:32px 28px;
+        color:#26383d;
+    "
+>
+
+
+<div
+    style="
+        font-size:13px;
+        color:#16845f;
+        font-weight:bold;
+        letter-spacing:1px;
+        margin-bottom:8px;
+    "
+>
+REGISTRATION CONFIRMED
+</div>
+
+
+<h1
+    style="
+        margin:0 0 18px 0;
+        font-size:26px;
+        color:#102f3b;
+    "
+>
+Your Official Event Pass
+</h1>
+
+
+<p
+    style="
+        font-size:15px;
+        line-height:1.7;
+        margin:0 0 18px 0;
+    "
+>
+Hello <strong>${safeName}</strong>,
+</p>
+
+
+<p
+    style="
+        font-size:14px;
+        line-height:1.7;
+        margin:0 0 24px 0;
+    "
+>
+Your registration for the
+<strong>8th MIMAROPA Regional IT Congress</strong>
+has been successfully confirmed.
+</p>
+
+
+<!-- ================================= -->
+<!-- PASS CARD -->
+<!-- ================================= -->
+
+<table
+    width="100%"
+    cellpadding="0"
+    cellspacing="0"
+    border="0"
+    style="
+        background:#f4faf7;
+        border:1px solid #d7eee5;
+        border-radius:14px;
+        padding:22px;
+    "
+>
+
+<tr>
+
+<td align="center">
+
+
+<div
+    style="
+        color:#0d6f4d;
+        font-size:12px;
+        font-weight:bold;
+        letter-spacing:1px;
+        margin-bottom:8px;
+    "
+>
+ATTENDEE PASS
+</div>
+
+
+<div
+    style="
+        color:#132f38;
+        font-size:20px;
+        font-weight:bold;
+        margin-bottom:18px;
+    "
+>
+${safeId}
+</div>
+
+
+<!-- QR CODE -->
+
+<div
+    style="
+        background:#ffffff;
+        border-radius:12px;
+        padding:15px;
+        display:inline-block;
+        border:1px solid #dfece7;
+    "
+>
+
+<img
+    src="cid:qrImage"
+    alt="Attendee QR Code"
+    width="250"
+    height="250"
+    style="
+        display:block;
+        width:250px;
+        height:250px;
+        max-width:100%;
+    "
+>
+
+</div>
+
+
+<div
+    style="
+        color:#50666d;
+        font-size:12px;
+        margin-top:15px;
+    "
+>
+Attendee ID
+</div>
+
+
+<div
+    style="
+        color:#102f3b;
+        font-size:14px;
+        font-weight:bold;
+        margin-top:4px;
+    "
+>
+${safeId}
+</div>
+
+
+</td>
+
+</tr>
+
+</table>
+
+
+<!-- ================================= -->
+<!-- INSTRUCTIONS -->
+<!-- ================================= -->
+
+<table
+    width="100%"
+    cellpadding="0"
+    cellspacing="0"
+    border="0"
+    style="
+        margin-top:24px;
+        background:#eef8f5;
+        border-left:4px solid #12b981;
+        border-radius:8px;
+    "
+>
+
+<tr>
+
+<td
+    style="
+        padding:15px 17px;
+        color:#36535a;
+        font-size:13px;
+        line-height:1.7;
+    "
+>
+
+<strong
+    style="color:#0c6e4d;"
+>
+Important:
+</strong>
+
+Please keep this QR code accessible during the event.
+You may present it using your mobile device or a printed copy
+when checking in.
+
+</td>
+
+</tr>
+
+</table>
+
+
+<!-- ================================= -->
+<!-- REGISTRATION INFO -->
+<!-- ================================= -->
+
+<p
+    style="
+        margin:25px 0 5px 0;
+        color:#74878c;
+        font-size:11px;
+        text-transform:uppercase;
+        letter-spacing:1px;
+    "
+>
+Registration Type
+</p>
+
+
+<p
+    style="
+        margin:0;
+        color:#263f46;
+        font-size:14px;
+        font-weight:bold;
+    "
+>
+${registrationType}
+</p>
+
+
+<p
+    style="
+        margin-top:28px;
+        margin-bottom:0;
+        color:#536970;
+        font-size:13px;
+        line-height:1.7;
+    "
+>
+Thank you for being part of the
+<strong>8th MIMAROPA Regional IT Congress</strong>.
+We look forward to seeing you at the event.
+</p>
+
+
+</td>
+
+</tr>
+
+
+<!-- ================================= -->
+<!-- FOOTER -->
+<!-- ================================= -->
+
+<tr>
+
+<td
+    style="
+        background:#071f2b;
+        padding:20px;
+        text-align:center;
+    "
+>
+
+<div
+    style="
+        color:#ffffff;
+        font-size:12px;
+        font-weight:bold;
+    "
+>
+8th MIMAROPA Regional IT Congress
+</div>
+
+
+<div
+    style="
+        color:#83a5ad;
+        font-size:11px;
+        margin-top:6px;
+    "
+>
+CODE GREEN 2026
+</div>
+
+
+</td>
+
+</tr>
+
+
+</table>
+
+
+</td>
+
+</tr>
+
+</table>
+
+</body>
+
+</html>
+
+`;
+
+
+    // --------------------------------------------------
+    // SEND EMAIL
+    // --------------------------------------------------
+
+    MailApp.sendEmail({
+
+      to: recipientEmail,
+
+      subject: subject,
+
+      htmlBody: htmlBody,
+
+      body:
+        "Hello " + fullName + ",\n\n" +
+        "Your registration for the 8th MIMAROPA Regional IT Congress has been confirmed.\n\n" +
+        "Attendee ID: " + attendeeId + "\n\n" +
+        "Please present the attached QR code during the event.\n\n" +
+        "Thank you.",
+
+      inlineImages: {
+
+        qrImage: qrBlob
+
+      },
+
+      attachments: [
+
+        qrBlob
+
+      ]
+
+    });
+
+
+    console.log(
+      "================================="
+    );
+
+    console.log(
+      "QR EMAIL SENT SUCCESSFULLY"
+    );
+
+    console.log(
+      "To: " + recipientEmail
+    );
+
+    console.log(
+      "Attendee ID: " + attendeeId
+    );
+
+    console.log(
+      "================================="
+    );
+
+
+    return true;
+
+  }
+
+
+  catch (err) {
+
+    console.error(
+      "================================="
+    );
+
+    console.error(
+      "QR EMAIL FAILED"
+    );
+
+    console.error(
+      "Recipient: " + recipientEmail
+    );
+
+    console.error(
+      "Attendee ID: " + attendeeId
+    );
+
+    console.error(
+      err.toString()
+    );
+
+    console.error(
+      "================================="
+    );
+
+    throw err;
+
+  }
+
+}
+
+
+/**
+ * Prevent HTML injection in email content.
+ */
+function escapeHtml(value) {
+
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+}
+
+
+/**
+ * HTML ESCAPING HELPER
+ *
+ * Prevents attendee names/IDs containing special
+ * characters from breaking the email HTML.
+ */
+function escapeHtml(value) {
+
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+//manual override
+const MANUAL_OVERRIDE_PIN = "Meowmeow123";
+function manualOverride(attendeeId, session, pin) {
+
+
+  // VERIFY PIN
+  
+
+  if (String(pin || "") !== MANUAL_OVERRIDE_PIN) {
+
+    return {
+      status: "INVALID_PIN",
+      displayStatus: "Try Again",
+      name: "",
+      attendeeId: attendeeId || "",
+      timestamp: "",
+      message: "Invalid override PIN."
+    };
+  }
+
+
+  const lock = LockService.getScriptLock();
+
+  try {
+
+    lock.waitLock(3000);
+
+    const ss = getSpreadsheet();
+
+    const cleanId = String(attendeeId || "")
+      .trim()
+      .toUpperCase();
+
+    const sessionType = String(session || "")
+      .trim()
+      .toUpperCase();
+
+
+    // Search Individual Attendees
+    let result = manualOverrideOnSheet(
+      ss.getSheetByName("Individual Attendees"),
+      cleanId,
+      sessionType
+    );
+
+    if (result.found) {
+      return result.result;
+    }
+
+
+    // Search Group Attendees
+    result = manualOverrideOnSheet(
+      ss.getSheetByName("Group_Bulk Attendees"),
+      cleanId,
+      sessionType
+    );
+
+    if (result.found) {
+      return result.result;
+    }
+
+
+    return {
+      status: "INVALID",
+      displayStatus: "Try Again",
+      name: "",
+      attendeeId: cleanId,
+      timestamp: "",
+      message: "Attendee ID was not found."
+    };
+
+  } catch (e) {
+
+    return {
+      status: "ERROR",
+      displayStatus: "Try Again",
+      name: "",
+      attendeeId: cleanId,
+      timestamp: "",
+      message: "Manual override failed."
+    };
+
+  } finally {
+
+    try {
+      lock.releaseLock();
+    } catch (err) {}
+
+  }
+}
+//for manual override
+function manualOverrideOnSheet(sheet, targetId, sessionType) {
+
+  if (!sheet || sheet.getLastRow() < 2) {
+    return { found: false };
+  }
+
+
+  const finder = sheet
+    .getRange("A:A")
+    .createTextFinder(targetId)
+    .matchEntireCell(true)
+    .matchCase(false);
+
+  const cell = finder.findNext();
+
+  if (!cell) {
+    return { found: false };
+  }
+
+
+  const rowIndex = cell.getRow();
+
+  if (rowIndex < 2) {
+    return { found: false };
+  }
+
+
+  const rowData = sheet
+    .getRange(rowIndex, 1, 1, 12)
+    .getValues()[0];
+
+
+  const attendeeId = String(rowData[0] || "").trim();
+  const name = String(rowData[1] || "").trim();
+
+  const attStatus = String(rowData[6] || "").toUpperCase();
+  const attTime = String(rowData[7] || "");
+
+  const amStatus = String(rowData[8] || "").toUpperCase();
+  const amTime = String(rowData[9] || "");
+
+  const pmStatus = String(rowData[10] || "").toUpperCase();
+  const pmTime = String(rowData[11] || "");
+
+
+  const timestamp = Utilities.formatDate(
+    new Date(),
+    Session.getScriptTimeZone(),
+    "yyyy-MM-dd hh:mm:ss a"
+  );
+
+
+
+  // ATTENDANCE
+  
+  if (sessionType === "ATTENDANCE") {
+
+    if (attStatus === "PRESENT") {
+
+      return {
+        found: true,
+        result: {
+          status: "ALREADY_SCANNED",
+          displayStatus: "Already Scanned",
+          name: name,
+          attendeeId: attendeeId,
+          timestamp: attTime,
+          message: "Attendance has already been recorded."
+        }
+      };
+    }
+
+    sheet
+      .getRange(rowIndex, 7, 1, 2)
+      .setValues([["PRESENT", timestamp]]);
+
+    return {
+      found: true,
+      result: {
+        status: "SUCCESS",
+        displayStatus: "Scan Successfully",
+        name: name,
+        attendeeId: attendeeId,
+        timestamp: timestamp,
+        message: "Attendance recorded using manual override."
+      }
+    };
+  }
+
+
+  // AM SNACK
+
+
+  if (sessionType === "AM_SNACK") {
+
+    if (amStatus === "CLAIMED") {
+
+      return {
+        found: true,
+        result: {
+          status: "ALREADY_SCANNED",
+          displayStatus: "Already Scanned",
+          name: name,
+          attendeeId: attendeeId,
+          timestamp: amTime,
+          message: "AM Snack has already been claimed."
+        }
+      };
+    }
+
+    sheet
+      .getRange(rowIndex, 9, 1, 2)
+      .setValues([["CLAIMED", timestamp]]);
+
+    return {
+      found: true,
+      result: {
+        status: "SUCCESS",
+        displayStatus: "Scan Successfully",
+        name: name,
+        attendeeId: attendeeId,
+        timestamp: timestamp,
+        message: "AM Snack recorded using manual override."
+      }
+    };
+  }
+
+
+  // PM SNACK
+ 
+
+  if (sessionType === "PM_SNACK") {
+
+    if (pmStatus === "CLAIMED") {
+
+      return {
+        found: true,
+        result: {
+          status: "ALREADY_SCANNED",
+          displayStatus: "Already Scanned",
+          name: name,
+          attendeeId: attendeeId,
+          timestamp: pmTime,
+          message: "PM Snack has already been claimed."
+        }
+      };
+    }
+
+    sheet
+      .getRange(rowIndex, 11, 1, 2)
+      .setValues([["CLAIMED", timestamp]]);
+
+    return {
+      found: true,
+      result: {
+        status: "SUCCESS",
+        displayStatus: "Scan Successfully",
+        name: name,
+        attendeeId: attendeeId,
+        timestamp: timestamp,
+        message: "PM Snack recorded using manual override."
+      }
+    };
+  }
+
+
+  return {
+    found: true,
+    result: {
+      status: "ERROR",
+      displayStatus: "Try Again",
+      name: name,
+      attendeeId: attendeeId,
+      timestamp: timestamp,
+      message: "Invalid station."
+    }
+  };
+}
+
+
+//helper function
+function include(filename) {
+  return HtmlService
+    .createHtmlOutputFromFile(filename)
+    .getContent();
+}
