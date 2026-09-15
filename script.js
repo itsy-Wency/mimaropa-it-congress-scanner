@@ -10,7 +10,7 @@
 ========================================================= */
 
 const DEPLOYED_WEB_APP_URL =
-    "https://script.google.com/macros/s/AKfycbw6aqArIX_eXtrfBDe5_iiqX-97-Zfwbgt3K_P21P56jP0-0tjl8PjKf1o6cyESCwaqSw/exec";
+    "https://script.google.com/macros/s/AKfycbyLseZj1D40TxYwQXd87Kbcj78Zqhp8kKljXEwciCuFXlJXtGw_li5FmsxAcWyQeKr1Hw/exec";
 
 
 /* =========================================================
@@ -824,6 +824,24 @@ function handleResponse(res) {
         )
             .trim();
 
+    const overrideBulkFlag =
+        data.isBulk === true ||
+        String(data.isBulk || "").toLowerCase() === "true" ||
+        String(data.attendeeId || attendeeId || "").toUpperCase().startsWith("ATT-BLK-");
+
+    const overrideBulkInfo = overrideBulkFlag
+        ? {
+            isBulk: true,
+            school: school,
+            headcount: Number(data.headcount || 0),
+            free: Number(data.free || 0),
+            payingParticipants: Number(
+                data.payingParticipants ??
+                Math.max(Number(data.headcount || 0) - Number(data.free || 0), 0)
+            )
+        }
+        : null;
+
 
     const timestamp =
         String(
@@ -1371,12 +1389,16 @@ function showResultModal(
     const modalMessage =
         document.getElementById("modalMessage");
 
-    /* Individual school block (used only for individual registrations). */
+    /* Individual school display. The actual value comes from
+       Individual Attendees / Group_Bulk Attendees Column F. */
     const individualSchool =
         modalElement.querySelector(".individual-school");
 
     const individualModalSchool =
         document.getElementById("individualModalSchool");
+
+    const individualSchoolLabel =
+        modalElement.querySelector(".individual-school-label");
 
 
     /* BULK REGISTRATION MODAL ELEMENTS */
@@ -1517,33 +1539,21 @@ function showResultModal(
     }
 
     /* ---------------------------------------------------------
-       BULK REGISTRATION SUMMARY
+       REGISTRATION-SPECIFIC INFORMATION
     --------------------------------------------------------- */
 
-    if (
-        bulkRegistrationInfo &&
-        bulkInfo &&
-        bulkInfo.isBulk === true
-    ) {
+    if (bulkRegistrationInfo && bulkInfo && bulkInfo.isBulk === true) {
 
-        /* Show ONLY the previous working bulk summary. */
+        /* BULK: restore the previous working summary. */
         bulkRegistrationInfo.style.display = "block";
 
-        /* Bulk registrations use the bulk summary school field. */
         if (individualSchool) {
             individualSchool.style.display = "none";
         }
 
-        const bulkSchoolLabel =
-            bulkRegistrationInfo.querySelector(".bulk-school .bulk-label");
-
-        if (bulkSchoolLabel) {
-            bulkSchoolLabel.textContent = "BULK REGISTRATION";
-        }
-
         if (modalSchool) {
             modalSchool.textContent =
-                bulkInfo.school || "School Not Specified";
+                String(bulkInfo.school || "").trim() || "-";
         }
 
         if (modalHeadcount) {
@@ -1552,8 +1562,13 @@ function showResultModal(
         }
 
         if (modalPaying) {
+            const headcount = Number(bulkInfo.headcount || 0);
+            const free = Number(bulkInfo.free || 0);
             modalPaying.textContent =
-                Number(bulkInfo.payingParticipants || 0).toLocaleString();
+                Number(
+                    bulkInfo.payingParticipants ??
+                    Math.max(headcount - free, 0)
+                ).toLocaleString();
         }
 
         if (modalFree) {
@@ -1561,49 +1576,71 @@ function showResultModal(
                 Number(bulkInfo.free || 0).toLocaleString();
         }
 
-        /* Remove any duplicate generic placeholder outside the bulk box. */
-        const modalContent =
-            modalElement.querySelector(".modal-content");
+        /* Hide only the OLD generic individual school placeholder.
+           Do not touch the school field inside the bulk summary. */
+        modalElement.querySelectorAll(".individual-school").forEach(el => {
+            el.style.display = "none";
+        });
 
-        if (modalContent) {
-            modalContent.querySelectorAll("*").forEach(element => {
-                if (bulkRegistrationInfo.contains(element)) {
-                    return;
-                }
+    } else {
 
-                const text =
-                    String(element.textContent || "")
-                        .replace(/\s+/g, " ")
-                        .trim()
-                        .toUpperCase();
-
-                if (
-                    text === "SCHOOL / ORGANIZATION" ||
-                    text === "SCHOOL / ORGANIZATION -"
-                ) {
-                    element.style.display = "none";
-                }
-            });
-        }
-
-    }
-
-    else {
-
-        /* Individual registration: display the actual School value from Column F. */
+        /* INDIVIDUAL: show the actual School value returned from
+           Column F. Never display the literal placeholder
+           "SCHOOL / ORGANIZATION". */
         if (bulkRegistrationInfo) {
             bulkRegistrationInfo.style.display = "none";
         }
 
+        const actualSchool =
+            String(school || "").trim();
+
         if (individualSchool) {
-            individualSchool.style.display = "block";
+            individualSchool.style.display = actualSchool ? "block" : "none";
+        }
+
+        if (individualSchoolLabel) {
+            /* Remove the placeholder label completely. */
+            individualSchoolLabel.style.display = "none";
         }
 
         if (individualModalSchool) {
-            individualModalSchool.textContent =
-                String(school || "").trim() || "-";
+            individualModalSchool.textContent = actualSchool || "-";
         }
 
+        /* If an older HTML version has no individual-school block,
+           create one immediately after the attendee name. */
+        if (!individualSchool && actualSchool && modalName) {
+            let fallbackSchool =
+                modalElement.querySelector("#fallbackIndividualSchool");
+
+            if (!fallbackSchool) {
+                fallbackSchool = document.createElement("div");
+                fallbackSchool.id = "fallbackIndividualSchool";
+                fallbackSchool.className = "individual-school";
+                fallbackSchool.style.marginTop = "4px";
+                fallbackSchool.style.textAlign = "center";
+                fallbackSchool.innerHTML =
+                    '<strong id="fallbackIndividualSchoolValue"></strong>';
+                modalName.insertAdjacentElement("afterend", fallbackSchool);
+            }
+
+            const fallbackValue =
+                fallbackSchool.querySelector("#fallbackIndividualSchoolValue");
+
+            if (fallbackValue) {
+                fallbackValue.textContent = actualSchool;
+            }
+
+            fallbackSchool.style.display = "block";
+        }
+
+        /* Remove any stale fallback created by an older scan state. */
+        const staleFallback =
+            modalElement.querySelector("#fallbackIndividualSchool");
+
+        if (!actualSchool && staleFallback) {
+            staleFallback.style.display = "none";
+        }
     }
 
 
@@ -2201,7 +2238,7 @@ function handleOverrideResponse(
             attendeeId,
             safeTimestamp,
             message,
-            null,
+            overrideBulkInfo,
             school
         );
 
