@@ -9,8 +9,8 @@
    CONFIGURATION
 ========================================================= */
 
-const DEPLOYED_WEB_APP_URL =
-    "https://script.google.com/macros/s/AKfycbw6aqArIX_eXtrfBDe5_iiqX-97-Zfwbgt3K_P21P56jP0-0tjl8PjKf1o6cyESCwaqSw/exec";
+const DEPLOYED_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw_HEwlUvhGQBY-Us_hoLQzy1FdUlL4ewo5k9-zDRLoq2FvRBplJG8lLAoeiGLKyqa60w/exec";
+   // "https://script.google.com/macros/s/AKfycbw6aqArIX_eXtrfBDe5_iiqX-97-Zfwbgt3K_P21P56jP0-0tjl8PjKf1o6cyESCwaqSw/exec";
 
 
 /* =========================================================
@@ -52,6 +52,21 @@ const resultTime =
 
 const resultMessage =
     document.getElementById("resultMessage");
+
+const bulkRegistrationInfo =
+    document.getElementById("bulkRegistrationInfo");
+
+const modalSchool =
+    document.getElementById("modalSchool");
+
+const modalHeadcount =
+    document.getElementById("modalHeadcount");
+
+const modalPaying =
+    document.getElementById("modalPaying");
+
+const modalFree =
+    document.getElementById("modalFree");
 
 const overrideButton =
     document.getElementById("overrideButton");
@@ -832,6 +847,29 @@ function handleResponse(res) {
         )
             .trim();
 
+    /* ---------------------------------------------------------
+       BULK REGISTRATION INFORMATION
+    --------------------------------------------------------- */
+
+    const bulkInfo =
+        data.isBulk === true
+            ? {
+                isBulk: true,
+                school: String(data.school || "").trim(),
+                headcount: Number(data.headcount || 0),
+                free: Number(data.free || 0),
+                payingParticipants:
+                    Number(
+                        data.payingParticipants ??
+                        Math.max(
+                            Number(data.headcount || 0) -
+                            Number(data.free || 0),
+                            0
+                        )
+                    )
+            }
+            : null;
+
 
     console.log(
         "Normalized scan response:",
@@ -902,7 +940,8 @@ function handleResponse(res) {
             safeName,
             attendeeId,
             safeTimestamp,
-            safeMessage
+            safeMessage,
+            bulkInfo
         );
 
 
@@ -959,7 +998,8 @@ function handleResponse(res) {
             safeName,
             attendeeId,
             safeTimestamp,
-            safeMessage
+            safeMessage,
+            bulkInfo
         );
 
 
@@ -1280,7 +1320,8 @@ function showResultModal(
     name,
     attendeeId,
     timestamp,
-    message
+    message,
+    bulkInfo = null
 ) {
     const modalElement = document.getElementById("resultModal");
 
@@ -1429,6 +1470,58 @@ function showResultModal(
     if (modalMessage) {
         modalMessage.textContent =
             safeMessage;
+    }
+
+    /* ---------------------------------------------------------
+       BULK REGISTRATION SUMMARY
+    --------------------------------------------------------- */
+
+    if (
+        bulkRegistrationInfo &&
+        bulkInfo &&
+        bulkInfo.isBulk === true
+    ) {
+        bulkRegistrationInfo.style.display = "block";
+
+        if (modalSchool) {
+            modalSchool.textContent =
+                bulkInfo.school || "School Not Specified";
+        }
+
+        if (modalHeadcount) {
+            modalHeadcount.textContent =
+                Number(bulkInfo.headcount || 0).toLocaleString();
+        }
+
+        if (modalPaying) {
+            modalPaying.textContent =
+                Number(bulkInfo.payingParticipants || 0).toLocaleString();
+        }
+
+        if (modalFree) {
+            modalFree.textContent =
+                Number(bulkInfo.free || 0).toLocaleString();
+        }
+    } else {
+        if (bulkRegistrationInfo) {
+            bulkRegistrationInfo.style.display = "none";
+        }
+
+        if (modalSchool) {
+            modalSchool.textContent = "-";
+        }
+
+        if (modalHeadcount) {
+            modalHeadcount.textContent = "0";
+        }
+
+        if (modalPaying) {
+            modalPaying.textContent = "0";
+        }
+
+        if (modalFree) {
+            modalFree.textContent = "0";
+        }
     }
 
 
