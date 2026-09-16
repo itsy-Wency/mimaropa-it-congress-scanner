@@ -27,6 +27,54 @@ let lastScanTime = 0;
 
 const SCAN_COOLDOWN = 2500;
 
+/* =========================================================
+   ATTENDEE DIRECTORY FALLBACK
+   The Apps Script endpoint exposes ?action=attendees.
+   This guarantees that the UI can resolve FULL NAME and
+   SCHOOL from the same Google Sheet even if the scan response
+   does not include those fields.
+========================================================= */
+
+let attendeeDirectory = [];
+
+function loadAttendeeDirectory() {
+    fetch(DEPLOYED_WEB_APP_URL + "?action=attendees", {
+        method: "GET",
+        cache: "no-store",
+        redirect: "follow"
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(list => {
+        if (Array.isArray(list)) {
+            attendeeDirectory = list.map(item => ({
+                id: String(item.id || "").trim().toUpperCase(),
+                name: String(item.name || "").trim(),
+                school: String(item.school || "").trim()
+            })).filter(item => item.id);
+
+            console.log("Attendee directory loaded:", attendeeDirectory.length);
+        }
+    })
+    .catch(error => {
+        console.warn("Attendee directory fallback unavailable:", error);
+    });
+}
+
+function findAttendeeById(attendeeId) {
+    const cleanId = String(attendeeId || "").trim().toUpperCase();
+
+    if (!cleanId || !Array.isArray(attendeeDirectory)) {
+        return null;
+    }
+
+    return attendeeDirectory.find(item => item.id === cleanId) || null;
+}
+
 
 /* =========================================================
    DOM ELEMENTS
@@ -72,8 +120,8 @@ const confirmOverride =
 
 window.addEventListener("load", () => {
 
+    loadAttendeeDirectory();
     initializeScanner();
-
     setupEvents();
 
 });
@@ -639,52 +687,30 @@ function processCheckIn(attendeeId) {
             text
         );
 
-        /*
-         * Apps Script web-app responses can sometimes contain
-         * surrounding whitespace or a wrapper around the JSON.
-         * Extract the JSON object before declaring the request
-         * failed. This prevents a successful Sheet write from
-         * being incorrectly shown as a CONNECTION ERROR.
-         */
-        let result = null;
-        const rawText = String(text || "").trim();
+
+        let result;
+
 
         try {
-            result = JSON.parse(rawText);
-        } catch (error) {
-            const firstBrace = rawText.indexOf("{");
-            const lastBrace = rawText.lastIndexOf("}");
 
-            if (
-                firstBrace !== -1 &&
-                lastBrace > firstBrace
-            ) {
-                try {
-                    result = JSON.parse(
-                        rawText.substring(
-                            firstBrace,
-                            lastBrace + 1
-                        )
-                    );
-                } catch (nestedError) {
-                    console.error(
-                        "JSON parsing failed:",
-                        nestedError
-                    );
-                }
-            }
+            result =
+                JSON.parse(text);
 
-            if (!result) {
-                console.error(
-                    "Invalid Apps Script response:",
-                    rawText
-                );
-
-                throw new Error(
-                    "Invalid JSON response from Apps Script."
-                );
-            }
         }
+
+        catch (error) {
+
+            console.error(
+                "JSON parsing failed:",
+                error
+            );
+
+            throw new Error(
+                "Invalid JSON response from Apps Script."
+            );
+
+        }
+
 
         handleResponse(result);
 
@@ -826,23 +852,37 @@ function handleResponse(res) {
             .trim();
 
 
-    const name =
-        String(
-            data.name || ""
-        )
-            .trim();
-
-
     const attendeeId =
         String(
             data.attendeeId || ""
         )
             .trim();
 
+    /*
+     * PRIMARY SOURCE: Apps Script response.
+     * FALLBACK SOURCE: attendee directory loaded from the same
+     * Google Sheet using ?action=attendees.
+     * This prevents the UI from falling back to ATTENDEE when
+     * the scan itself was successfully recorded.
+     */
+    const directoryRecord = findAttendeeById(attendeeId);
+
+    const name =
+        String(
+            data.name ||
+            data.fullName ||
+            data.fullname ||
+            (directoryRecord && directoryRecord.name) ||
+            ""
+        )
+            .trim();
 
     const school =
         String(
-            data.school || ""
+            data.school ||
+            data.schoolName ||
+            (directoryRecord && directoryRecord.school) ||
+            ""
         )
             .trim();
 
@@ -877,25 +917,33 @@ function handleResponse(res) {
 
                 school:
                     String(
-                        data.school || ""
+                        data.school ||
+                        data.schoolName ||
+                        (directoryRecord && directoryRecord.school) ||
+                        ""
                     ).trim(),
 
                 headcount:
                     Number(
-                        data.headcount || 0
+                        data.headcount ??
+                        data.headCount ??
+                        0
                     ),
 
                 free:
                     Number(
-                        data.free || 0
+                        data.free ??
+                        data.freeParticipants ??
+                        0
                     ),
 
                 payingParticipants:
                     Number(
                         data.payingParticipants ??
+                        data.paying ??
                         Math.max(
-                            Number(data.headcount || 0) -
-                            Number(data.free || 0),
+                            Number(data.headcount ?? data.headCount ?? 0) -
+                            Number(data.free ?? data.freeParticipants ?? 0),
                             0
                         )
                     )
@@ -944,6 +992,7 @@ function handleResponse(res) {
 
         const safeName =
             name ||
+            (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
@@ -1004,6 +1053,7 @@ function handleResponse(res) {
 
         const safeName =
             name ||
+            (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
@@ -1062,6 +1112,7 @@ function handleResponse(res) {
 
         const safeName =
             name ||
+            (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
@@ -1371,311 +1422,353 @@ function showResultModal(
         return;
     }
 
-    try {
-        const modalIcon = document.getElementById("modalIcon");
-        const modalStatus = document.getElementById("modalStatus");
-        const modalName = document.getElementById("modalName");
-        const modalId = document.getElementById("modalId");
-        const modalTime = document.getElementById("modalTime");
-        const modalMessage = document.getElementById("modalMessage");
-        const bulkRegistrationInfo = document.getElementById("bulkRegistrationInfo");
-        const modalSchool = document.getElementById("modalSchool");
-        const modalHeadcount = document.getElementById("modalHeadcount");
-        const modalPaying = document.getElementById("modalPaying");
-        const modalFree = document.getElementById("modalFree");
+    /* -----------------------------------------------------
+       GET MODAL ELEMENTS
+    ----------------------------------------------------- */
 
-        const safeType = String(type || "error").trim().toLowerCase();
-        const safeStatus = String(status || "TRY AGAIN").trim();
-        const safeName = String(name || attendeeId || "ATTENDEE").trim();
-        const safeId = String(attendeeId || "NO ATTENDEE ID").trim();
-        const safeTimestamp = String(timestamp || getCurrentTimestamp()).trim();
-        const safeMessage = String(message || "Please try again.").trim();
+    const modalIcon =
+        document.getElementById("modalIcon");
 
-        /* ---------------------------------------------------------
-           DETERMINE BULK FROM THE ACTUAL RESPONSE / ID.
-           This works even if Apps Script returns isBulk as a string.
-        --------------------------------------------------------- */
-        const isBulk =
-            !!bulkInfo &&
-            (
-                bulkInfo.isBulk === true ||
-                String(bulkInfo.isBulk || "").toLowerCase() === "true" ||
-                String(bulkInfo.isBulk || "") === "1"
-            ) ||
-            /^ATT-BLK-/i.test(safeId);
+    const modalStatus =
+        document.getElementById("modalStatus");
 
-        /* ---------------------------------------------------------
-           RESET MODAL STATE
-        --------------------------------------------------------- */
-        modalElement.classList.remove(
-            "modal-success",
-            "modal-already",
+    const modalName =
+        document.getElementById("modalName");
+
+    const modalId =
+        document.getElementById("modalId");
+
+    const modalTime =
+        document.getElementById("modalTime");
+
+    const modalMessage =
+        document.getElementById("modalMessage");
+
+    /* Individual school block (used only for individual registrations). */
+    const individualSchool =
+        modalElement.querySelector(".individual-school");
+
+    const individualModalSchool =
+        document.getElementById("individualModalSchool");
+
+
+    /* BULK REGISTRATION MODAL ELEMENTS */
+
+    const bulkRegistrationInfo =
+        document.getElementById("bulkRegistrationInfo");
+
+    const modalSchool =
+        document.getElementById("modalSchool");
+
+    const modalHeadcount =
+        document.getElementById("modalHeadcount");
+
+    const modalPaying =
+        document.getElementById("modalPaying");
+
+    const modalFree =
+        document.getElementById("modalFree");
+
+
+    /* -----------------------------------------------------
+       NORMALIZE DATA
+    ----------------------------------------------------- */
+
+    const safeType =
+        String(type || "error").toLowerCase();
+
+    const safeStatus =
+        String(status || "TRY AGAIN");
+
+    const safeName =
+        String(name || "ATTENDEE NOT IDENTIFIED");
+
+    const safeId =
+        String(attendeeId || "NO ATTENDEE ID");
+
+    const safeTimestamp =
+        String(timestamp || getCurrentTimestamp());
+
+    const safeMessage =
+        String(
+            message ||
+            "Please try again."
+        );
+
+
+    /* -----------------------------------------------------
+       RESET MODAL
+    ----------------------------------------------------- */
+
+    modalElement.classList.remove(
+        "modal-success",
+        "modal-already",
+        "modal-error"
+    );
+
+
+    /* -----------------------------------------------------
+       STATUS TYPE
+    ----------------------------------------------------- */
+
+    if (safeType === "success") {
+
+        modalElement.classList.add(
+            "modal-success"
+        );
+
+        if (modalIcon) {
+            modalIcon.innerHTML =
+                '<i class="bi bi-check-lg"></i>';
+        }
+
+        if (modalStatus) {
+            modalStatus.textContent =
+                "SCAN SUCCESSFULLY";
+        }
+
+    }
+
+    else if (safeType === "already") {
+
+        modalElement.classList.add(
+            "modal-already"
+        );
+
+        if (modalIcon) {
+            modalIcon.innerHTML =
+                '<i class="bi bi-exclamation-lg"></i>';
+        }
+
+        if (modalStatus) {
+            modalStatus.textContent =
+                "ALREADY SCANNED";
+        }
+
+    }
+
+    else {
+
+        modalElement.classList.add(
             "modal-error"
         );
 
-        if (safeType === "success") {
-            modalElement.classList.add("modal-success");
-            if (modalIcon) {
-                modalIcon.innerHTML = '<i class="bi bi-check-lg"></i>';
-            }
-            if (modalStatus) {
-                modalStatus.textContent = "SCAN SUCCESSFULLY";
-            }
-        } else if (safeType === "already") {
-            modalElement.classList.add("modal-already");
-            if (modalIcon) {
-                modalIcon.innerHTML = '<i class="bi bi-exclamation-lg"></i>';
-            }
-            if (modalStatus) {
-                modalStatus.textContent = "ALREADY SCANNED";
-            }
-        } else {
-            modalElement.classList.add("modal-error");
-            if (modalIcon) {
-                modalIcon.innerHTML = '<i class="bi bi-x-lg"></i>';
-            }
-            if (modalStatus) {
-                modalStatus.textContent = safeStatus;
-            }
+        if (modalIcon) {
+            modalIcon.innerHTML =
+                '<i class="bi bi-x-lg"></i>';
         }
 
-        /* ---------------------------------------------------------
-           COMMON INFORMATION
-        --------------------------------------------------------- */
-        if (modalName) {
-            modalName.textContent = safeName;
+        if (modalStatus) {
+            modalStatus.textContent =
+                safeStatus;
+        }
+    }
+
+
+    /* -----------------------------------------------------
+       POPULATE ATTENDEE INFORMATION
+    ----------------------------------------------------- */
+
+    if (modalName) {
+        modalName.textContent =
+            safeName;
+    }
+
+    if (modalId) {
+        modalId.textContent =
+            safeId;
+    }
+
+    if (modalTime) {
+        modalTime.textContent =
+            safeTimestamp;
+    }
+
+    if (modalMessage) {
+        modalMessage.textContent =
+            safeMessage;
+    }
+
+    /* ---------------------------------------------------------
+       BULK REGISTRATION SUMMARY
+    --------------------------------------------------------- */
+
+    if (
+        bulkRegistrationInfo &&
+        bulkInfo &&
+        bulkInfo.isBulk === true
+    ) {
+
+        /* Show ONLY the previous working bulk summary. */
+        bulkRegistrationInfo.style.display = "block";
+
+        /* Bulk registrations use the bulk summary school field. */
+        if (individualSchool) {
+            individualSchool.style.display = "none";
         }
 
-        if (modalId) {
-            modalId.textContent = safeId;
+        const bulkSchoolLabel =
+            bulkRegistrationInfo.querySelector(".bulk-school .bulk-label");
+
+        if (bulkSchoolLabel) {
+            bulkSchoolLabel.textContent = "BULK REGISTRATION";
         }
 
-        const selectedStation = getSelectedStation();
-        if (modalTime) {
-            if (
-                selectedStation === "ATTENDANCE" &&
-                (safeType === "success" || safeType === "already")
-            ) {
-                modalTime.textContent = "PRESENT • " + safeTimestamp;
-            } else {
-                modalTime.textContent = safeTimestamp;
-            }
+        if (modalSchool) {
+            modalSchool.textContent =
+                bulkInfo.school || "School Not Specified";
         }
 
-        if (modalMessage) {
-            modalMessage.textContent = safeMessage;
+        if (modalHeadcount) {
+            modalHeadcount.textContent =
+                Number(bulkInfo.headcount || 0).toLocaleString();
         }
 
-        /* ---------------------------------------------------------
-           REMOVE THE OLD GENERIC SCHOOL / ORGANIZATION DISPLAY.
+        if (modalPaying) {
+            modalPaying.textContent =
+                Number(bulkInfo.payingParticipants || 0).toLocaleString();
+        }
 
-           Older versions of the HTML may still contain a hardcoded
-           school block. Do not rely on a specific class or ID.
-        --------------------------------------------------------- */
-        function hideOldGenericSchoolBlocks() {
-            const root = modalElement.querySelector(".modal-content") || modalElement;
-            const nodes = Array.from(root.querySelectorAll("*")).reverse();
+        if (modalFree) {
+            modalFree.textContent =
+                Number(bulkInfo.free || 0).toLocaleString();
+        }
 
-            nodes.forEach(function(element) {
-                if (bulkRegistrationInfo && bulkRegistrationInfo.contains(element)) {
+        /* Remove any duplicate generic placeholder outside the bulk box. */
+        const modalContent =
+            modalElement.querySelector(".modal-content");
+
+        if (modalContent) {
+            modalContent.querySelectorAll("*").forEach(element => {
+                if (bulkRegistrationInfo.contains(element)) {
                     return;
                 }
 
-                const text = String(element.textContent || "")
-                    .replace(/\s+/g, " ")
-                    .trim()
-                    .toUpperCase();
+                const text =
+                    String(element.textContent || "")
+                        .replace(/\s+/g, " ")
+                        .trim()
+                        .toUpperCase();
 
                 if (
                     text === "SCHOOL / ORGANIZATION" ||
-                    text === "SCHOOL / ORGANIZATION -" ||
-                    text === "SCHOOL/ORGANIZATION" ||
-                    text === "SCHOOL/ORGANIZATION -"
+                    text === "SCHOOL / ORGANIZATION -"
                 ) {
-                    /* Hide the containing row when possible. */
-                    let target = element;
-                    for (let i = 0; i < 3 && target.parentElement; i++) {
-                        const parentText = String(target.parentElement.textContent || "")
-                            .replace(/\s+/g, " ")
-                            .trim()
-                            .toUpperCase();
-
-                        if (
-                            parentText === "SCHOOL / ORGANIZATION" ||
-                            parentText === "SCHOOL / ORGANIZATION -" ||
-                            parentText === "SCHOOL/ORGANIZATION" ||
-                            parentText === "SCHOOL/ORGANIZATION -"
-                        ) {
-                            target = target.parentElement;
-                        } else {
-                            break;
-                        }
-                    }
-                    target.style.display = "none";
+                    element.style.display = "none";
                 }
             });
         }
 
-        hideOldGenericSchoolBlocks();
+    }
 
-        /* ---------------------------------------------------------
-           BULK DISPLAY
+    else {
 
-           Expected:
-           GOJO SATORU
-           ATT-BLK-SATORU1
-           REGISTRATION SUMMARY
-           MEOWMEOW UNIVERSITY
-           HEADCOUNT 151 | PAYING 146 | FREE 5
-        --------------------------------------------------------- */
-        if (isBulk) {
-            if (bulkRegistrationInfo) {
-                bulkRegistrationInfo.style.display = "block";
-            }
-
-            const bulkSchool = String(
-                (bulkInfo && bulkInfo.school) || school || ""
-            ).trim();
-
-            const headcount = Number(
-                bulkInfo && bulkInfo.headcount != null
-                    ? bulkInfo.headcount
-                    : 0
-            ) || 0;
-
-            const free = Number(
-                bulkInfo && bulkInfo.free != null
-                    ? bulkInfo.free
-                    : 0
-            ) || 0;
-
-            const paying = Number(
-                bulkInfo && bulkInfo.payingParticipants != null
-                    ? bulkInfo.payingParticipants
-                    : Math.max(headcount - free, 0)
-            ) || 0;
-
-            if (modalSchool) {
-                modalSchool.textContent = bulkSchool || "-";
-            }
-
-            if (modalHeadcount) {
-                modalHeadcount.textContent = headcount.toLocaleString();
-            }
-
-            if (modalPaying) {
-                modalPaying.textContent = paying.toLocaleString();
-            }
-
-            if (modalFree) {
-                modalFree.textContent = free.toLocaleString();
-            }
-
-            /* Remove any dynamically-created individual school row. */
-            const oldIndividualRow = document.getElementById("individualModalSchoolRow");
-            if (oldIndividualRow) {
-                oldIndividualRow.remove();
-            }
+        /* Individual registration: display the actual School value from Column F. */
+        if (bulkRegistrationInfo) {
+            bulkRegistrationInfo.style.display = "none";
         }
 
-        /* ---------------------------------------------------------
-           INDIVIDUAL DISPLAY
+        const actualSchool =
+            String(school || (directoryRecord && directoryRecord.school) || "")
+                .trim();
 
-           Expected:
-           WENCY JORDA
-           DIVINE WORD COLLEGE OF CALAPAN
-           ATT-IND-JORDA1
-           PRESENT • timestamp
+        if (individualSchool) {
+            individualSchool.style.display = actualSchool ? "block" : "none";
+        }
 
-           IMPORTANT: The current HTML does NOT contain an
-           individualModalSchool element. Therefore this code creates
-           it dynamically instead of assuming that it exists.
-        --------------------------------------------------------- */
-        else {
-            if (bulkRegistrationInfo) {
-                bulkRegistrationInfo.style.display = "none";
+        /* The label SCHOOL / ORGANIZATION is obsolete.
+           Only the actual Column F value is shown. */
+        if (individualSchoolLabel) {
+            individualSchoolLabel.style.display = "none";
+        }
+
+        if (individualModalSchool) {
+            individualModalSchool.textContent = actualSchool || "";
+            individualModalSchool.style.display = actualSchool ? "block" : "none";
+        }
+
+        /* Compatibility fallback for older HTML templates. */
+        if (!individualSchool && actualSchool && modalName) {
+            let fallbackSchool =
+                modalElement.querySelector("#fallbackIndividualSchool");
+
+            if (!fallbackSchool) {
+                fallbackSchool = document.createElement("div");
+                fallbackSchool.id = "fallbackIndividualSchool";
+                fallbackSchool.className = "individual-school";
+                fallbackSchool.style.textAlign = "center";
+                fallbackSchool.style.marginTop = "4px";
+                modalName.insertAdjacentElement("afterend", fallbackSchool);
             }
 
-            const individualSchoolValue = String(school || "").trim();
+            fallbackSchool.textContent = actualSchool;
+            fallbackSchool.style.display = "block";
+        }
 
-            let schoolRow = document.getElementById("individualModalSchoolRow");
-            let schoolValueElement = document.getElementById("individualModalSchool");
+    }
 
-            if (!schoolRow) {
-                schoolRow = document.createElement("div");
-                schoolRow.id = "individualModalSchoolRow";
-                schoolRow.className = "individual-school";
 
-                schoolValueElement = document.createElement("div");
-                schoolValueElement.id = "individualModalSchool";
-                schoolValueElement.className = "individual-school-value";
+    /* -----------------------------------------------------
+       SHOW MODAL
+    ----------------------------------------------------- */
 
-                schoolRow.appendChild(schoolValueElement);
+    try {
 
-                /* Insert the school immediately below the attendee ID. */
-                if (modalId && modalId.parentNode) {
-                    modalId.parentNode.insertBefore(
-                        schoolRow,
-                        modalTime ? modalTime.parentNode : modalId.nextSibling
-                    );
-                } else if (modalName && modalName.parentNode) {
-                    modalName.parentNode.insertBefore(
-                        schoolRow,
-                        modalName.nextSibling
-                    );
-                } else {
-                    modalElement.appendChild(schoolRow);
+        const modal =
+            bootstrap.Modal.getOrCreateInstance(
+                modalElement,
+                {
+                    backdrop: true,
+                    keyboard: true,
+                    focus: true
                 }
-            }
-
-            if (!schoolValueElement) {
-                schoolValueElement = document.getElementById("individualModalSchool");
-            }
-
-            if (schoolValueElement) {
-                schoolValueElement.textContent = individualSchoolValue || "-";
-                schoolValueElement.style.display = "block";
-                schoolValueElement.style.fontWeight = "400";
-                schoolValueElement.style.marginTop = "4px";
-                schoolValueElement.style.marginBottom = "4px";
-            }
-
-            schoolRow.style.display = "block";
-        }
-
-        /* ---------------------------------------------------------
-           SHOW MODAL
-        --------------------------------------------------------- */
-        const modal = bootstrap.Modal.getOrCreateInstance(
-            modalElement,
-            {
-                backdrop: true,
-                keyboard: true,
-                focus: true
-            }
-        );
+            );
 
         modal.show();
 
-        requestAnimationFrame(function() {
+        /*
+         * Force the modal to the front.
+         * This is particularly useful on mobile browsers
+         * where scanner/video elements may create stacking
+         * contexts.
+         */
+
+        requestAnimationFrame(() => {
+
             modalElement.style.zIndex = "1060";
 
-            const backdrop = document.querySelector(".modal-backdrop");
+            const backdrop =
+                document.querySelector(
+                    ".modal-backdrop"
+                );
+
             if (backdrop) {
                 backdrop.style.zIndex = "1055";
             }
+
         });
 
-    } catch (error) {
-        console.error("Result modal display error:", error);
+    }
 
-        /* Never convert a successful Sheet write into a fake error. */
+    catch (error) {
+
+        console.error(
+            "Unable to display result modal:",
+            error
+        );
+
+        /*
+         * Fallback:
+         * If Bootstrap fails for any reason,
+         * keep the result visible in the main status panel.
+         */
+
         updateStatus(
-            String(type || "error").toLowerCase(),
-            String(status || "TRY AGAIN"),
-            String(name || attendeeId || "ATTENDEE"),
-            String(timestamp || getCurrentTimestamp()),
-            String(message || "Check-in recorded successfully.")
+            safeType,
+            safeStatus,
+            safeName,
+            safeTimestamp,
+            safeMessage
         );
     }
 }
@@ -2143,15 +2236,24 @@ function handleOverrideResponse(
             .toUpperCase();
 
 
+    const directoryRecord = findAttendeeById(attendeeId);
+
     const name =
         String(
-            data.name || ""
+            data.name ||
+            data.fullName ||
+            data.fullname ||
+            (directoryRecord && directoryRecord.name) ||
+            ""
         )
             .trim();
 
     const school =
         String(
-            data.school || ""
+            data.school ||
+            data.schoolName ||
+            (directoryRecord && directoryRecord.school) ||
+            ""
         )
             .trim();
 
@@ -2184,6 +2286,7 @@ function handleOverrideResponse(
 
         const safeName =
             name ||
+            (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
@@ -2239,6 +2342,7 @@ function handleOverrideResponse(
 
         const safeName =
             name ||
+            (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
