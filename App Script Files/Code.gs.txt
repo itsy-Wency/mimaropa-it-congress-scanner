@@ -97,7 +97,7 @@ function doPost(e) {
       .createTextOutput(JSON.stringify({
         status: "ERROR",
         displayStatus: "Try Again",
-        message: "Server Error: " + err.toString()
+        message: "Unable to process the request. Please try again."
       }))
       .setMimeType(ContentService.MimeType.JSON);
   }
@@ -379,20 +379,32 @@ function getRegisteredAttendees() {
 
   const indSheet = ss.getSheetByName("Individual Attendees");
   if (indSheet && indSheet.getLastRow() > 1) {
-    const data = indSheet.getRange("A2:B" + indSheet.getLastRow()).getValues();
+    const data = indSheet.getRange(
+      "A2:F" + indSheet.getLastRow()
+    ).getValues();
     for (let i = 0; i < data.length; i++) {
       if (data[i][0]) {
-        list.push({ id: String(data[i][0]).trim(), name: String(data[i][1]).trim() });
+        list.push({
+          id: String(data[i][0]).trim(),
+          name: String(data[i][1]).trim(),
+          school: String(data[i][5] || "").trim()
+        });
       }
     }
   }
 
   const grpSheet = ss.getSheetByName("Group_Bulk Attendees");
   if (grpSheet && grpSheet.getLastRow() > 1) {
-    const data = grpSheet.getRange("A2:B" + grpSheet.getLastRow()).getValues();
+    const data = grpSheet.getRange(
+      "A2:F" + grpSheet.getLastRow()
+    ).getValues();
     for (let i = 0; i < data.length; i++) {
       if (data[i][0]) {
-        list.push({ id: String(data[i][0]).trim(), name: String(data[i][1]).trim() });
+        list.push({
+          id: String(data[i][0]).trim(),
+          name: String(data[i][1]).trim(),
+          school: String(data[i][5] || "").trim()
+        });
       }
     }
   }
@@ -513,7 +525,6 @@ function checkAndRecordStation(sheet, targetId, sessionType) {
     return { found: false };
   }
 
-  // Find attendee ID
   const finder = sheet
     .getRange("A:A")
     .createTextFinder(targetId)
@@ -532,227 +543,201 @@ function checkAndRecordStation(sheet, targetId, sessionType) {
     return { found: false };
   }
 
-  // Get attendee information
+  // A-L structure for BOTH Individual Attendees and Group_Bulk Attendees:
+  // A Attendee ID
+  // B Full Name
+  // C Certificate Name
+  // D Email
+  // E Contact
+  // F School / Organization
+  // G Attendance
+  // H Attendance Time
+  // I AM Snack
+  // J AM Snack Time
+  // K PM Snack
+  // L PM Snack Time
   const rowData = sheet
     .getRange(rowIndex, 1, 1, 12)
-    .getValues()[0];
+    .getDisplayValues()[0];
 
   const attendeeId = String(rowData[0] || "").trim();
   const name = String(rowData[1] || "").trim();
+
+  // CRITICAL: School is ALWAYS Column F (index 5).
   const school = String(rowData[5] || "").trim();
 
-  const attStatus = String(rowData[6] || "").toUpperCase();
-  const attTime   = String(rowData[7] || "");
+  const attStatus = String(rowData[6] || "")
+    .trim()
+    .toUpperCase();
+  const attTime = String(rowData[7] || "").trim();
 
-  const amStatus = String(rowData[8] || "").toUpperCase();
-  const amTime   = String(rowData[9] || "");
+  const amStatus = String(rowData[8] || "")
+    .trim()
+    .toUpperCase();
+  const amTime = String(rowData[9] || "").trim();
 
-  const pmStatus = String(rowData[10] || "").toUpperCase();
-  const pmTime   = String(rowData[11] || "");
+  const pmStatus = String(rowData[10] || "")
+    .trim()
+    .toUpperCase();
+  const pmTime = String(rowData[11] || "").trim();
 
+  const now = new Date();
   const timestamp = Utilities.formatDate(
-    new Date(),
+    now,
     Session.getScriptTimeZone(),
     "yyyy-MM-dd hh:mm:ss a"
   );
 
-
- 
-  // ATTENDANCE
- 
-
-  if (sessionType === "ATTENDANCE") {
-
-    // Duplicate
-    if (attStatus === "PRESENT") {
-
-      return {
-        found: true,
-        result: {
-          status: "ALREADY_SCANNED",
-          displayStatus: "Already Scanned",
-          name: name,
-          attendeeId: attendeeId,
-          timestamp: attTime,
-          message: "Attendance has already been recorded."
-        }
-      };
-    }
-
-    // Record attendance
-    sheet
-      .getRange(rowIndex, 7, 1, 2)
-      .setValues([
-        ["PRESENT", timestamp]
-      ]);
-
-    return {
-      found: true,
-      result: {
-        status: "SUCCESS",
-        displayStatus: "Scan Successfully",
-        name: name,
-        attendeeId: attendeeId,
-        school: school,
-        timestamp: timestamp,
-        message: "Attendance recorded successfully."
-      }
-    };
-  }
-
-
-
-  // AM SNACK
- 
-
-  if (sessionType === "AM_SNACK") {
-
-    // Attendance required first
-    if (attStatus !== "PRESENT") {
-
-      return {
-        found: true,
-        result: {
-          status: "BLOCKED",
-          displayStatus: "Try Again",
-          name: name,
-          attendeeId: attendeeId,
-          timestamp: timestamp,
-          message: "Attendee must scan Attendance first."
-        }
-      };
-    }
-
-    // Duplicate
-    if (amStatus === "CLAIMED") {
-
-      return {
-        found: true,
-        result: {
-          status: "ALREADY_SCANNED",
-          displayStatus: "Already Scanned",
-          name: name,
-          attendeeId: attendeeId,
-          timestamp: amTime,
-          message: "AM Snack has already been claimed."
-        }
-      };
-    }
-
-    // Record AM Snack
-    sheet
-      .getRange(rowIndex, 9, 1, 2)
-      .setValues([
-        ["CLAIMED", timestamp]
-      ]);
-
-    return {
-      found: true,
-      result: {
-        status: "SUCCESS",
-        displayStatus: "Scan Successfully",
-        name: name,
-        attendeeId: attendeeId,
-        timestamp: timestamp,
-        message: "AM Snack recorded successfully."
-      }
-    };
-  }
-
-
-
-  // PM SNACK
-
-
-  if (sessionType === "PM_SNACK") {
-
-    // Attendance required
-    if (attStatus !== "PRESENT") {
-
-      return {
-        found: true,
-        result: {
-          status: "BLOCKED",
-          displayStatus: "Try Again",
-          name: name,
-          attendeeId: attendeeId,
-          timestamp: timestamp,
-          message: "Attendee must scan Attendance first."
-        }
-      };
-    }
-
-    // AM Snack required
-    if (amStatus !== "CLAIMED") {
-
-      return {
-        found: true,
-        result: {
-          status: "BLOCKED",
-          displayStatus: "Try Again",
-          name: name,
-          attendeeId: attendeeId,
-          timestamp: timestamp,
-          message: "Attendee must claim AM Snack first."
-        }
-      };
-    }
-
-    // Duplicate
-    if (pmStatus === "CLAIMED") {
-
-      return {
-        found: true,
-        result: {
-          status: "ALREADY_SCANNED",
-          displayStatus: "Already Scanned",
-          name: name,
-          attendeeId: attendeeId,
-          timestamp: pmTime,
-          message: "PM Snack has already been claimed."
-        }
-      };
-    }
-
-    // Record PM Snack
-    sheet
-      .getRange(rowIndex, 11, 1, 2)
-      .setValues([
-        ["CLAIMED", timestamp]
-      ]);
-
-    return {
-      found: true,
-      result: {
-        status: "SUCCESS",
-        displayStatus: "Scan Successfully",
-        name: name,
-        attendeeId: attendeeId,
-        timestamp: timestamp,
-        message: "PM Snack recorded successfully."
-      }
-    };
-  }
-
-
-  
-  // INVALID SESSION
-  
-
-  return {
+  // Helper ensures every response has the same metadata.
+  const buildResult = (status, displayStatus, time, message, attendanceStatus) => ({
     found: true,
     result: {
-      status: "ERROR",
-      displayStatus: "Try Again",
+      status: status,
+      displayStatus: displayStatus,
       name: name,
+      school: school,
       attendeeId: attendeeId,
-      timestamp: timestamp,
-      message: "Invalid station requested."
+      timestamp: time || timestamp,
+      attendanceStatus: attendanceStatus || attStatus || "",
+      attendanceTime: attTime,
+      message: message
     }
-  };
+  });
+
+  // =====================================================
+  // ATTENDANCE
+  // =====================================================
+  if (sessionType === "ATTENDANCE") {
+
+    // Already checked in.
+    if (attStatus === "PRESENT") {
+      return buildResult(
+        "ALREADY_SCANNED",
+        "Already Scanned",
+        attTime,
+        "Attendance has already been recorded.",
+        "PRESENT"
+      );
+    }
+
+    // Record attendance.
+    sheet
+      .getRange(rowIndex, 7, 1, 2)
+      .setValues([["PRESENT", now]]);
+
+    SpreadsheetApp.flush();
+
+    return buildResult(
+      "SUCCESS",
+      "Scan Successfully",
+      timestamp,
+      "Attendance recorded successfully.",
+      "PRESENT"
+    );
+  }
+
+  // =====================================================
+  // AM SNACK
+  // =====================================================
+  if (sessionType === "AM_SNACK") {
+
+    if (attStatus !== "PRESENT") {
+      return buildResult(
+        "BLOCKED",
+        "Try Again",
+        timestamp,
+        "Attendee must scan Attendance first.",
+        attStatus || "ABSENT"
+      );
+    }
+
+    if (amStatus === "CLAIMED") {
+      return buildResult(
+        "ALREADY_SCANNED",
+        "Already Scanned",
+        amTime,
+        "AM Snack has already been claimed.",
+        "PRESENT"
+      );
+    }
+
+    sheet
+      .getRange(rowIndex, 9, 1, 2)
+      .setValues([["CLAIMED", now]]);
+
+    SpreadsheetApp.flush();
+
+    return buildResult(
+      "SUCCESS",
+      "Scan Successfully",
+      timestamp,
+      "AM Snack recorded successfully.",
+      "PRESENT"
+    );
+  }
+
+  // =====================================================
+  // PM SNACK
+  // =====================================================
+  if (sessionType === "PM_SNACK") {
+
+    if (attStatus !== "PRESENT") {
+      return buildResult(
+        "BLOCKED",
+        "Try Again",
+        timestamp,
+        "Attendee must scan Attendance first.",
+        attStatus || "ABSENT"
+      );
+    }
+
+    if (amStatus !== "CLAIMED") {
+      return buildResult(
+        "BLOCKED",
+        "Try Again",
+        timestamp,
+        "Attendee must claim AM Snack first.",
+        "PRESENT"
+      );
+    }
+
+    if (pmStatus === "CLAIMED") {
+      return buildResult(
+        "ALREADY_SCANNED",
+        "Already Scanned",
+        pmTime,
+        "PM Snack has already been claimed.",
+        "PRESENT"
+      );
+    }
+
+    sheet
+      .getRange(rowIndex, 11, 1, 2)
+      .setValues([["CLAIMED", now]]);
+
+    SpreadsheetApp.flush();
+
+    return buildResult(
+      "SUCCESS",
+      "Scan Successfully",
+      timestamp,
+      "PM Snack recorded successfully.",
+      "PRESENT"
+    );
+  }
+
+  // =====================================================
+  // INVALID SESSION
+  // =====================================================
+  return buildResult(
+    "ERROR",
+    "Try Again",
+    timestamp,
+    "Invalid station requested.",
+    attStatus
+  );
 }
 
-//modified
 /**
  * SEND OFFICIAL QR EVENT PASS
  */
@@ -1582,6 +1567,7 @@ function manualOverrideOnSheet(sheet, targetId, sessionType) {
 
   const attendeeId = String(rowData[0] || "").trim();
   const name = String(rowData[1] || "").trim();
+  const school = String(rowData[5] || "").trim();
 
   const attStatus = String(rowData[6] || "").toUpperCase();
   const attTime = String(rowData[7] || "");
@@ -1613,6 +1599,7 @@ function manualOverrideOnSheet(sheet, targetId, sessionType) {
           status: "ALREADY_SCANNED",
           displayStatus: "Already Scanned",
           name: name,
+          school: school,
           attendeeId: attendeeId,
           timestamp: attTime,
           message: "Attendance has already been recorded."
@@ -1630,6 +1617,7 @@ function manualOverrideOnSheet(sheet, targetId, sessionType) {
         status: "SUCCESS",
         displayStatus: "Scan Successfully",
         name: name,
+        school: school,
         attendeeId: attendeeId,
         timestamp: timestamp,
         message: "Attendance recorded using manual override."
@@ -1651,6 +1639,7 @@ function manualOverrideOnSheet(sheet, targetId, sessionType) {
           status: "ALREADY_SCANNED",
           displayStatus: "Already Scanned",
           name: name,
+          school: school,
           attendeeId: attendeeId,
           timestamp: amTime,
           message: "AM Snack has already been claimed."
@@ -1668,6 +1657,7 @@ function manualOverrideOnSheet(sheet, targetId, sessionType) {
         status: "SUCCESS",
         displayStatus: "Scan Successfully",
         name: name,
+        school: school,
         attendeeId: attendeeId,
         timestamp: timestamp,
         message: "AM Snack recorded using manual override."
@@ -1689,6 +1679,7 @@ function manualOverrideOnSheet(sheet, targetId, sessionType) {
           status: "ALREADY_SCANNED",
           displayStatus: "Already Scanned",
           name: name,
+          school: school,
           attendeeId: attendeeId,
           timestamp: pmTime,
           message: "PM Snack has already been claimed."
@@ -1706,6 +1697,7 @@ function manualOverrideOnSheet(sheet, targetId, sessionType) {
         status: "SUCCESS",
         displayStatus: "Scan Successfully",
         name: name,
+        school: school,
         attendeeId: attendeeId,
         timestamp: timestamp,
         message: "PM Snack recorded using manual override."

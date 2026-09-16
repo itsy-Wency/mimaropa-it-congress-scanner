@@ -698,7 +698,7 @@ function processCheckIn(attendeeId) {
         );
 
 
-        handleError(error);
+        handleError(error, attendeeId, session);
 
     });
 
@@ -1174,42 +1174,175 @@ function finishProcessing() {
    HANDLE REQUEST ERROR
 ========================================================= */
 
-function handleError(error) {
+function handleError(error, attendeeId = "", session = "") {
 
-    console.error(
-        "Request error:",
-        error
-    );
+    console.error("Request error:", error);
+
+    /*
+     * A Google Apps Script write may succeed even when the browser
+     * cannot read the redirected cross-origin POST response.
+     * Verify the real Sheet state before reporting CONNECTION ERROR.
+     */
+    verifyScanViaJsonp(attendeeId, session)
+        .then(result => {
+
+            if (result && result.verified === true) {
+                console.warn(
+                    "Scan verified from Google Sheets after network error:",
+                    result
+                );
+
+                /* If the stored timestamp is recent, the failed POST
+                   almost certainly completed the requested operation. */
+                const requestAge =
+                    Date.now() - Number(result.actionTimestampMs || 0);
+
+                const requestedStation =
+                    String(session || "").toUpperCase();
+
+                const recentWrite =
+                    result.actionTimestampMs > 0 &&
+                    requestAge >= -5000 &&
+                    requestAge <= 30000;
+
+                if (
+                    recentWrite &&
+                    (
+                        result.status === "ALREADY_SCANNED" ||
+                        result.status === "SUCCESS"
+                    )
+                ) {
+                    result.status = "SUCCESS";
+                    result.displayStatus = "Scan Successfully";
+                    result.message =
+                        requestedStation === "ATTENDANCE"
+                            ? "Attendance recorded successfully."
+                            : requestedStation === "AM_SNACK"
+                                ? "AM Snack recorded successfully."
+                                : requestedStation === "PM_SNACK"
+                                    ? "PM Snack recorded successfully."
+                                    : result.message;
+                }
+
+                handleResponse(result);
+                return;
+            }
+
+            throw new Error("Scan could not be verified from Google Sheets.");
+        })
+        .catch(verificationError => {
+
+            console.error(
+                "Scan verification failed:",
+                verificationError
+            );
+
+            playSound("error");
+
+            const timestamp = getCurrentTimestamp();
+
+            updateStatus(
+                "error",
+                "CONNECTION ERROR",
+                "",
+                timestamp,
+                "Unable to communicate with the check-in server. Please try again."
+            );
+
+            showResultModal(
+                "error",
+                "TRY AGAIN",
+                "",
+                attendeeId,
+                timestamp,
+                "Unable to communicate with the check-in server. Please try again."
+            );
+
+            finishProcessing();
+        });
+}
 
 
-    playSound("error");
+/* =========================================================
+   VERIFY SCAN AFTER A NETWORK/CORS FAILURE
+========================================================= */
 
+function verifyScanViaJsonp(attendeeId, session) {
 
-    const timestamp =
-        getCurrentTimestamp();
+    return new Promise((resolve, reject) => {
 
+        const cleanId = String(attendeeId || "")
+            .trim()
+            .toUpperCase();
 
-    updateStatus(
-        "error",
-        "CONNECTION ERROR",
-        "",
-        timestamp,
-        "Unable to communicate with the check-in server. Please try again."
-    );
+        const cleanSession = String(session || "")
+            .trim()
+            .toUpperCase();
 
+        if (!cleanId || !cleanSession) {
+            reject(new Error("Missing attendee ID or station for verification."));
+            return;
+        }
 
-    showResultModal(
-        "error",
-        "TRY AGAIN",
-        "",
-        "",
-        timestamp,
-        "Unable to communicate with the check-in server. Please try again."
-    );
+        const callbackName =
+            "scanVerify_" + Date.now() + "_" +
+            Math.floor(Math.random() * 100000);
 
+        const script = document.createElement("script");
+        let finished = false;
 
-    finishProcessing();
+        const cleanup = () => {
+            if (script.parentNode) {
+                script.parentNode.removeChild(script);
+            }
+            try {
+                delete window[callbackName];
+            } catch (error) {
+                window[callbackName] = undefined;
+            }
+        };
 
+        const timeout = setTimeout(() => {
+            if (finished) return;
+            finished = true;
+            cleanup();
+            reject(new Error("Google Sheets verification timed out."));
+        }, 8000);
+
+        window[callbackName] = result => {
+            if (finished) return;
+
+            finished = true;
+            clearTimeout(timeout);
+            cleanup();
+
+            if (result && result.verified === true) {
+                resolve(result);
+            } else {
+                reject(new Error("Google Sheets verification returned no matching record."));
+            }
+        };
+
+        script.onerror = () => {
+            if (finished) return;
+
+            finished = true;
+            clearTimeout(timeout);
+            cleanup();
+            reject(new Error("Unable to load the verification endpoint."));
+        };
+
+        script.src =
+            DEPLOYED_WEB_APP_URL +
+            "?action=verifyScan" +
+            "&attendeeId=" + encodeURIComponent(cleanId) +
+            "&session=" + encodeURIComponent(cleanSession) +
+            "&callback=" + encodeURIComponent(callbackName) +
+            "&_=" + Date.now();
+
+        script.async = true;
+        document.head.appendChild(script);
+    });
 }
 
 
@@ -1660,62 +1793,21 @@ function showResultModal(
         } else {
 
             /*
-             * =================================================
              * INDIVIDUAL REGISTRATION
-             * =================================================
-             *
-             * Only the actual Column F school is displayed.
+             * Show ONLY the actual school value returned from Column F.
+             * There is no SCHOOL / ORGANIZATION placeholder or label.
              */
             if (bulkRegistrationInfo) {
-                bulkRegistrationInfo.style.display =
-                    "none";
+                bulkRegistrationInfo.style.display = "none";
             }
 
             if (individualSchool) {
-                individualSchool.style.display =
-                    "block";
+                individualSchool.style.display = school ? "block" : "none";
             }
 
             if (individualModalSchool) {
                 individualModalSchool.textContent =
-                    String(
-                        school || ""
-                    ).trim() || "-";
-            }
-
-            /*
-             * Hide any old generic placeholder.
-             */
-            const modalContent =
-                modalElement.querySelector(
-                    ".modal-content"
-                );
-
-            if (modalContent) {
-
-                modalContent
-                    .querySelectorAll("*")
-                    .forEach(element => {
-
-                        const text =
-                            String(
-                                element.textContent ||
-                                ""
-                            )
-                                .replace(/\s+/g, " ")
-                                .trim()
-                                .toUpperCase();
-
-                        if (
-                            text ===
-                                "SCHOOL / ORGANIZATION" ||
-                            text ===
-                                "SCHOOL / ORGANIZATION -"
-                        ) {
-                            element.style.display =
-                                "none";
-                        }
-                    });
+                    String(school || "").trim();
             }
         }
 
