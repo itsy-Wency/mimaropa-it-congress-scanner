@@ -53,18 +53,6 @@ const resultTime =
 const resultMessage =
     document.getElementById("resultMessage");
 
-const bulkRegistrationInfo =
-    document.getElementById("bulkRegistrationInfo");
-
-const modalHeadcount =
-    document.getElementById("modalHeadcount");
-
-const modalPaying =
-    document.getElementById("modalPaying");
-
-const modalFree =
-    document.getElementById("modalFree");
-
 const overrideButton =
     document.getElementById("overrideButton");
 
@@ -651,30 +639,52 @@ function processCheckIn(attendeeId) {
             text
         );
 
-
-        let result;
-
+        /*
+         * Apps Script web-app responses can sometimes contain
+         * surrounding whitespace or a wrapper around the JSON.
+         * Extract the JSON object before declaring the request
+         * failed. This prevents a successful Sheet write from
+         * being incorrectly shown as a CONNECTION ERROR.
+         */
+        let result = null;
+        const rawText = String(text || "").trim();
 
         try {
+            result = JSON.parse(rawText);
+        } catch (error) {
+            const firstBrace = rawText.indexOf("{");
+            const lastBrace = rawText.lastIndexOf("}");
 
-            result =
-                JSON.parse(text);
+            if (
+                firstBrace !== -1 &&
+                lastBrace > firstBrace
+            ) {
+                try {
+                    result = JSON.parse(
+                        rawText.substring(
+                            firstBrace,
+                            lastBrace + 1
+                        )
+                    );
+                } catch (nestedError) {
+                    console.error(
+                        "JSON parsing failed:",
+                        nestedError
+                    );
+                }
+            }
 
+            if (!result) {
+                console.error(
+                    "Invalid Apps Script response:",
+                    rawText
+                );
+
+                throw new Error(
+                    "Invalid JSON response from Apps Script."
+                );
+            }
         }
-
-        catch (error) {
-
-            console.error(
-                "JSON parsing failed:",
-                error
-            );
-
-            throw new Error(
-                "Invalid JSON response from Apps Script."
-            );
-
-        }
-
 
         handleResponse(result);
 
@@ -830,6 +840,13 @@ function handleResponse(res) {
             .trim();
 
 
+    const school =
+        String(
+            data.school || ""
+        )
+            .trim();
+
+
     const timestamp =
         String(
             data.timestamp || ""
@@ -843,23 +860,47 @@ function handleResponse(res) {
             "No additional information was provided."
         )
             .trim();
+    /* ---------------------------------------------------------
+       BULK REGISTRATION INFORMATION
+    --------------------------------------------------------- */
 
-
-    // School is returned by Code.gs for BOTH individual and bulk scans.
-    const school =
-        String(
-            data.school ||
-            data.schoolName ||
-            data.organization ||
-            data.institution ||
-            ""
-        )
-            .trim();
-
+    const bulkFlag =
+        data.isBulk === true ||
+        String(data.isBulk || "").toLowerCase() === "true" ||
+        String(data.isBulk || "") === "1" ||
+        String(data.attendeeId || "").toUpperCase().startsWith("ATT-BLK-");
 
     const bulkInfo =
-        normalizeBulkInfo(data);
+        bulkFlag
+            ? {
+                isBulk: true,
 
+                school:
+                    String(
+                        data.school || ""
+                    ).trim(),
+
+                headcount:
+                    Number(
+                        data.headcount || 0
+                    ),
+
+                free:
+                    Number(
+                        data.free || 0
+                    ),
+
+                payingParticipants:
+                    Number(
+                        data.payingParticipants ??
+                        Math.max(
+                            Number(data.headcount || 0) -
+                            Number(data.free || 0),
+                            0
+                        )
+                    )
+            }
+            : null;
 
     console.log(
         "Normalized scan response:",
@@ -869,10 +910,11 @@ function handleResponse(res) {
             name: name,
             attendeeId: attendeeId,
             timestamp: timestamp,
-            message: message,
-            bulkInfo: bulkInfo
+            message: message
         }
     );
+
+    
 
 
     /* =========================================================
@@ -921,9 +963,7 @@ function handleResponse(res) {
             "SCAN SUCCESSFULLY",
             safeName,
             safeTimestamp,
-            safeMessage,
-            bulkInfo,
-            school
+            safeMessage
         );
 
 
@@ -936,6 +976,7 @@ function handleResponse(res) {
             safeMessage,
             bulkInfo,
             school
+
         );
 
 
@@ -982,9 +1023,7 @@ function handleResponse(res) {
             "ALREADY SCANNED",
             safeName,
             safeTimestamp,
-            safeMessage,
-            bulkInfo,
-            school
+            safeMessage
         );
 
 
@@ -1042,8 +1081,7 @@ function handleResponse(res) {
             "TRY AGAIN",
             safeName,
             safeTimestamp,
-            safeMessage,
-            bulkInfo
+            safeMessage
         );
 
 
@@ -1054,7 +1092,8 @@ function handleResponse(res) {
             attendeeId,
             safeTimestamp,
             safeMessage,
-            bulkInfo
+            null,
+            school
         );
 
 
@@ -1103,7 +1142,9 @@ function handleResponse(res) {
         safeName,
         attendeeId,
         safeTimestamp,
-        safeMessage
+        safeMessage,
+        null,
+        school
     );
 
 
@@ -1181,8 +1222,7 @@ function updateStatus(
     title,
     name,
     timestamp,
-    message,
-    bulkInfo = null
+    message
 ) {
 
     if (!statusBox) {
@@ -1228,12 +1268,6 @@ function updateStatus(
             "Select a station and scan an attendee QR code.";
 
     }
-
-
-    renderBulkRegistrationInfo(
-        bulkRegistrationInfo,
-        bulkInfo
-    );
 
 
     updateResultIcon(type);
@@ -1330,228 +1364,366 @@ function showResultModal(
     bulkInfo = null,
     school = ""
 ) {
-    const modalElement = document.getElementById("resultModal");
+    const modalElement =
+        document.getElementById("resultModal");
 
     if (!modalElement) {
         console.error("Result modal element not found.");
         return;
     }
 
-    /* -----------------------------------------------------
-       GET MODAL ELEMENTS
-    ----------------------------------------------------- */
+    /*
+     * Everything inside this function is protected so that a
+     * presentation problem can NEVER turn a successfully
+     * recorded scan into a CONNECTION ERROR.
+     */
+    try {
 
-    const modalIcon =
-        document.getElementById("modalIcon");
+        const modalIcon =
+            document.getElementById("modalIcon");
 
-    const modalStatus =
-        document.getElementById("modalStatus");
+        const modalStatus =
+            document.getElementById("modalStatus");
 
-    const modalName =
-        document.getElementById("modalName");
+        const modalName =
+            document.getElementById("modalName");
 
-    const modalId =
-        document.getElementById("modalId");
+        const modalId =
+            document.getElementById("modalId");
 
-    const modalTime =
-        document.getElementById("modalTime");
+        const modalTime =
+            document.getElementById("modalTime");
 
-    const modalMessage =
-        document.getElementById("modalMessage");
+        const modalMessage =
+            document.getElementById("modalMessage");
 
+        const individualSchool =
+            modalElement.querySelector(".individual-school");
 
-    const bulkInfoContainer =
-        getOrCreateBulkInfoContainer(modalElement);
+        const individualModalSchool =
+            document.getElementById("individualModalSchool");
 
+        const bulkRegistrationInfo =
+            document.getElementById("bulkRegistrationInfo");
 
-    const individualSchoolContainer =
-        getOrCreateIndividualSchoolContainer(
-            modalElement,
-            modalName
-        );
+        const modalSchool =
+            document.getElementById("modalSchool");
 
+        const modalHeadcount =
+            document.getElementById("modalHeadcount");
 
-    /* -----------------------------------------------------
-       NORMALIZE DATA
-    ----------------------------------------------------- */
+        const modalPaying =
+            document.getElementById("modalPaying");
 
-    const safeType =
-        String(type || "error").toLowerCase();
+        const modalFree =
+            document.getElementById("modalFree");
 
-    const safeStatus =
-        String(status || "TRY AGAIN");
+        const safeType =
+            String(type || "error").toLowerCase();
 
-    const safeName =
-        String(name || attendeeId || "ATTENDEE");
+        const safeStatus =
+            String(status || "TRY AGAIN");
 
-    const safeId =
-        String(attendeeId || "NO ATTENDEE ID");
+        const safeName =
+            String(
+                name ||
+                attendeeId ||
+                "ATTENDEE"
+            ).trim();
 
-    const safeTimestamp =
-        String(timestamp || getCurrentTimestamp());
+        const safeId =
+            String(
+                attendeeId ||
+                "NO ATTENDEE ID"
+            ).trim();
 
-    const safeMessage =
-        String(
-            message ||
-            "Please try again."
-        );
+        const safeTimestamp =
+            String(
+                timestamp ||
+                getCurrentTimestamp()
+            ).trim();
 
+        const safeMessage =
+            String(
+                message ||
+                "Please try again."
+            ).trim();
 
-    const safeSchool =
-        String(
-            school ||
-            ""
-        ).trim();
-
-
-    /* -----------------------------------------------------
-       HIDE OLD HTML SCHOOL / ORGANIZATION PLACEHOLDER
-       The actual individual school is rendered by
-       #individualSchoolDisplay below. Bulk school is rendered
-       only inside #bulkRegistrationInfo.
-    ----------------------------------------------------- */
-
-    if (modalSchool) {
-        modalSchool.style.display = "none";
-        modalSchool.textContent = "";
-    }
-
-    if (individualSchoolLabel) {
-        individualSchoolLabel.style.display = "none";
-    }
-
-
-    /* -----------------------------------------------------
-       RESET MODAL
-    ----------------------------------------------------- */
-
-    modalElement.classList.remove(
-        "modal-success",
-        "modal-already",
-        "modal-error"
-    );
-
-
-    /* -----------------------------------------------------
-       STATUS TYPE
-    ----------------------------------------------------- */
-
-    if (safeType === "success") {
-
-        modalElement.classList.add(
-            "modal-success"
-        );
-
-        if (modalIcon) {
-            modalIcon.innerHTML =
-                '<i class="bi bi-check-lg"></i>';
-        }
-
-        if (modalStatus) {
-            modalStatus.textContent =
-                "SCAN SUCCESSFULLY";
-        }
-
-    }
-
-    else if (safeType === "already") {
-
-        modalElement.classList.add(
-            "modal-already"
-        );
-
-        if (modalIcon) {
-            modalIcon.innerHTML =
-                '<i class="bi bi-exclamation-lg"></i>';
-        }
-
-        if (modalStatus) {
-            modalStatus.textContent =
-                "ALREADY SCANNED";
-        }
-
-    }
-
-    else {
-
-        modalElement.classList.add(
+        /*
+         * Reset previous modal state.
+         */
+        modalElement.classList.remove(
+            "modal-success",
+            "modal-already",
             "modal-error"
         );
 
-        if (modalIcon) {
-            modalIcon.innerHTML =
-                '<i class="bi bi-x-lg"></i>';
-        }
+        /*
+         * Set modal status.
+         */
+        if (safeType === "success") {
 
-        if (modalStatus) {
-            modalStatus.textContent =
-                safeStatus;
-        }
-    }
+            modalElement.classList.add(
+                "modal-success"
+            );
 
+            if (modalIcon) {
+                modalIcon.innerHTML =
+                    '<i class="bi bi-check-lg"></i>';
+            }
 
-    /* -----------------------------------------------------
-       POPULATE ATTENDEE INFORMATION
-    ----------------------------------------------------- */
+            if (modalStatus) {
+                modalStatus.textContent =
+                    "SCAN SUCCESSFULLY";
+            }
 
-    if (modalName) {
-        modalName.textContent =
-            safeName;
-    }
+        } else if (safeType === "already") {
 
-    if (modalId) {
-        modalId.textContent =
-            safeId;
-    }
+            modalElement.classList.add(
+                "modal-already"
+            );
 
-    if (modalTime) {
-        const selectedStation =
-            typeof getSelectedStation === "function"
-                ? getSelectedStation()
-                : "";
+            if (modalIcon) {
+                modalIcon.innerHTML =
+                    '<i class="bi bi-exclamation-lg"></i>';
+            }
 
-        if (
-            selectedStation === "ATTENDANCE" &&
-            (safeType === "success" || safeType === "already")
-        ) {
-            modalTime.textContent =
-                "PRESENT • " + safeTimestamp;
+            if (modalStatus) {
+                modalStatus.textContent =
+                    "ALREADY SCANNED";
+            }
+
         } else {
-            modalTime.textContent =
-                safeTimestamp;
+
+            modalElement.classList.add(
+                "modal-error"
+            );
+
+            if (modalIcon) {
+                modalIcon.innerHTML =
+                    '<i class="bi bi-x-lg"></i>';
+            }
+
+            if (modalStatus) {
+                modalStatus.textContent =
+                    safeStatus;
+            }
         }
-    }
 
-    if (modalMessage) {
-        modalMessage.textContent =
-            safeMessage;
-    }
+        /*
+         * Common attendee information.
+         */
+        if (modalName) {
+            modalName.textContent =
+                safeName;
+        }
 
+        if (modalId) {
+            modalId.textContent =
+                safeId;
+        }
 
-    renderIndividualSchoolInfo(
-        individualSchoolContainer,
-        safeSchool,
-        bulkInfo
-    );
+        if (modalTime) {
+            /*
+             * Attendance scans should explicitly show PRESENT.
+             * Snack scans retain their normal timestamp.
+             */
+            const selectedStation =
+                getSelectedStation();
 
-    // Never show the existing bulk HTML block for an individual scan.
-    if (bulkInfoContainer && !(bulkInfo && bulkInfo.isBulk === true)) {
-        bulkInfoContainer.innerHTML = "";
-        bulkInfoContainer.style.display = "none";
-    }
+            if (
+                selectedStation === "ATTENDANCE" &&
+                (
+                    safeType === "success" ||
+                    safeType === "already"
+                )
+            ) {
+                modalTime.textContent =
+                    "PRESENT • " +
+                    safeTimestamp;
+            } else {
+                modalTime.textContent =
+                    safeTimestamp;
+            }
+        }
 
-    renderBulkRegistrationInfo(
-        bulkInfoContainer,
-        bulkInfo
-    );
+        if (modalMessage) {
+            modalMessage.textContent =
+                safeMessage;
+        }
 
+        /*
+         * =====================================================
+         * BULK REGISTRATION
+         * =====================================================
+         *
+         * Bulk is determined explicitly from bulkInfo.
+         * The school belongs inside the registration summary.
+         */
+        const isBulk =
+            !!(
+                bulkInfo &&
+                bulkInfo.isBulk === true
+            );
 
-    /* -----------------------------------------------------
-       SHOW MODAL
-    ----------------------------------------------------- */
+        if (isBulk) {
 
-    try {
+            if (bulkRegistrationInfo) {
+                bulkRegistrationInfo.style.display =
+                    "block";
+            }
 
+            if (individualSchool) {
+                individualSchool.style.display =
+                    "none";
+            }
+
+            if (individualModalSchool) {
+                individualModalSchool.textContent =
+                    "";
+            }
+
+            if (modalSchool) {
+                modalSchool.textContent =
+                    String(
+                        bulkInfo.school ||
+                        "School Not Specified"
+                    ).trim();
+            }
+
+            if (modalHeadcount) {
+                modalHeadcount.textContent =
+                    Number(
+                        bulkInfo.headcount || 0
+                    ).toLocaleString();
+            }
+
+            if (modalPaying) {
+                modalPaying.textContent =
+                    Number(
+                        bulkInfo.payingParticipants || 0
+                    ).toLocaleString();
+            }
+
+            if (modalFree) {
+                modalFree.textContent =
+                    Number(
+                        bulkInfo.free || 0
+                    ).toLocaleString();
+            }
+
+            /*
+             * Hide the obsolete generic school placeholder
+             * outside the bulk summary.
+             */
+            const modalContent =
+                modalElement.querySelector(
+                    ".modal-content"
+                );
+
+            if (modalContent) {
+
+                modalContent
+                    .querySelectorAll("*")
+                    .forEach(element => {
+
+                        if (
+                            bulkRegistrationInfo &&
+                            bulkRegistrationInfo.contains(
+                                element
+                            )
+                        ) {
+                            return;
+                        }
+
+                        const text =
+                            String(
+                                element.textContent ||
+                                ""
+                            )
+                                .replace(/\s+/g, " ")
+                                .trim()
+                                .toUpperCase();
+
+                        if (
+                            text ===
+                                "SCHOOL / ORGANIZATION" ||
+                            text ===
+                                "SCHOOL / ORGANIZATION -"
+                        ) {
+                            element.style.display =
+                                "none";
+                        }
+                    });
+            }
+
+        } else {
+
+            /*
+             * =================================================
+             * INDIVIDUAL REGISTRATION
+             * =================================================
+             *
+             * Only the actual Column F school is displayed.
+             */
+            if (bulkRegistrationInfo) {
+                bulkRegistrationInfo.style.display =
+                    "none";
+            }
+
+            if (individualSchool) {
+                individualSchool.style.display =
+                    "block";
+            }
+
+            if (individualModalSchool) {
+                individualModalSchool.textContent =
+                    String(
+                        school || ""
+                    ).trim() || "-";
+            }
+
+            /*
+             * Hide any old generic placeholder.
+             */
+            const modalContent =
+                modalElement.querySelector(
+                    ".modal-content"
+                );
+
+            if (modalContent) {
+
+                modalContent
+                    .querySelectorAll("*")
+                    .forEach(element => {
+
+                        const text =
+                            String(
+                                element.textContent ||
+                                ""
+                            )
+                                .replace(/\s+/g, " ")
+                                .trim()
+                                .toUpperCase();
+
+                        if (
+                            text ===
+                                "SCHOOL / ORGANIZATION" ||
+                            text ===
+                                "SCHOOL / ORGANIZATION -"
+                        ) {
+                            element.style.display =
+                                "none";
+                        }
+                    });
+            }
+        }
+
+        /*
+         * =====================================================
+         * SHOW MODAL
+         * =====================================================
+         */
         const modal =
             bootstrap.Modal.getOrCreateInstance(
                 modalElement,
@@ -1564,16 +1736,10 @@ function showResultModal(
 
         modal.show();
 
-        /*
-         * Force the modal to the front.
-         * This is particularly useful on mobile browsers
-         * where scanner/video elements may create stacking
-         * contexts.
-         */
-
         requestAnimationFrame(() => {
 
-            modalElement.style.zIndex = "1060";
+            modalElement.style.zIndex =
+                "1060";
 
             const backdrop =
                 document.querySelector(
@@ -1581,275 +1747,46 @@ function showResultModal(
                 );
 
             if (backdrop) {
-                backdrop.style.zIndex = "1055";
+                backdrop.style.zIndex =
+                    "1055";
             }
-
         });
 
-    }
+    } catch (error) {
 
-    catch (error) {
-
+        /*
+         * IMPORTANT:
+         * Do NOT throw this error back into the fetch promise.
+         * The Sheet operation has already succeeded.
+         */
         console.error(
-            "Unable to display result modal:",
+            "Result modal display error:",
             error
         );
 
         /*
-         * Fallback:
-         * If Bootstrap fails for any reason,
-         * keep the result visible in the main status panel.
+         * Keep the successful result visible in the
+         * main status panel instead of converting it
+         * into a CONNECTION ERROR.
          */
-
         updateStatus(
-            safeType,
-            safeStatus,
-            safeName,
-            safeTimestamp,
-            safeMessage
+            String(type || "error").toLowerCase(),
+            String(status || "TRY AGAIN"),
+            String(
+                name ||
+                attendeeId ||
+                "ATTENDEE"
+            ),
+            String(
+                timestamp ||
+                getCurrentTimestamp()
+            ),
+            String(
+                message ||
+                "Check-in recorded successfully."
+            )
         );
     }
-}
-
-
-/* =========================================================
-   INDIVIDUAL SCHOOL DISPLAY
-   Displays ONLY the actual school value from Column F.
-   No duplicate SCHOOL / ORGANIZATION placeholder is used.
-========================================================= */
-
-function getOrCreateIndividualSchoolContainer(
-    modalElement,
-    modalName
-) {
-
-    let container =
-        modalElement.querySelector(
-            "#individualSchoolDisplay"
-        );
-
-    if (container) {
-        return container;
-    }
-
-    container = document.createElement("div");
-
-    container.id = "individualSchoolDisplay";
-    container.className = "individual-school-display";
-    container.style.cssText =
-        "margin:4px 12px 12px;text-align:center;font-size:16px;font-weight:700;line-height:1.3;overflow-wrap:anywhere;color:#fff;";
-
-    if (modalName) {
-        modalName.insertAdjacentElement(
-            "afterend",
-            container
-        );
-    } else {
-        modalElement.appendChild(container);
-    }
-
-    return container;
-}
-
-
-function renderIndividualSchoolInfo(
-    container,
-    school,
-    bulkInfo
-) {
-
-    if (!container) {
-        return;
-    }
-
-    // Bulk scans use the school displayed in the bulk summary.
-    if (
-        bulkInfo &&
-        bulkInfo.isBulk === true
-    ) {
-        container.textContent = "";
-        container.style.display = "none";
-        return;
-    }
-
-    // For individual scans, display ONLY Column F's actual value.
-    container.textContent =
-        String(school || "").trim() || "-";
-
-    container.style.display = "block";
-}
-
-
-/* =========================================================
-   BULK REGISTRATION DATA
-========================================================= */
-
-function normalizeBulkInfo(data) {
-
-    if (!data || typeof data !== "object") {
-        return null;
-    }
-
-    const source =
-        data.bulkInfo &&
-        typeof data.bulkInfo === "object"
-            ? data.bulkInfo
-            : data;
-
-    const school = firstValue(
-        source.school,
-        source.schoolName,
-        source.organization,
-        source.institution
-    );
-
-    let headcount = toNumber(firstValue(
-        source.headcount,
-        source.headCount,
-        source.totalHeadcount,
-        source.total_headcount,
-        source.totalParticipants,
-        source.totalParticipantsCount
-    ));
-
-    let free = toNumber(firstValue(
-        source.free,
-        source.freeCount,
-        source.freeParticipants,
-        source.freeRegistration,
-        source.freeRegistrations,
-        source.free_headcount
-    ));
-
-    let paying = toNumber(firstValue(
-        source.paying,
-        source.payee,
-        source.paid,
-        source.payingParticipants,
-        source.paidParticipants,
-        source.payerCount
-    ));
-
-    if (headcount !== null && free === null) {
-        free = Math.floor(headcount / 30);
-    }
-
-    if (headcount !== null && paying === null && free !== null) {
-        paying = Math.max(0, headcount - free);
-    }
-
-    // Only show the BULK panel when the backend explicitly identifies
-    // the scan as bulk or supplies actual bulk registration counts.
-    // An individual attendee also has a school, so school alone must
-    // NOT make the response appear as a bulk registration.
-    const isExplicitBulk =
-        data.isBulk === true ||
-        (data.bulkInfo && data.bulkInfo.isBulk === true);
-
-    const hasBulkCounts =
-        headcount !== null ||
-        free !== null ||
-        paying !== null;
-
-    const hasBulkData =
-        isExplicitBulk ||
-        hasBulkCounts;
-
-    if (!hasBulkData) {
-        return null;
-    }
-
-    return {
-        isBulk: true,
-        school: school || "NOT PROVIDED",
-        headcount: headcount !== null ? headcount : "—",
-        paying: paying !== null ? paying : "—",
-        free: free !== null ? free : "—"
-    };
-}
-
-function firstValue(...values) {
-    for (const value of values) {
-        if (value !== undefined && value !== null && String(value).trim() !== "") {
-            return value;
-        }
-    }
-    return null;
-}
-
-function toNumber(value) {
-    if (value === undefined || value === null || String(value).trim() === "") {
-        return null;
-    }
-
-    const number = Number(String(value).replace(/,/g, "").trim());
-    return Number.isFinite(number) ? number : null;
-}
-
-function getOrCreateBulkInfoContainer(modalElement) {
-
-    if (!modalElement) return null;
-
-    let container = modalElement.querySelector("#bulkRegistrationInfo");
-    if (container) return container;
-
-    const modalMessage = modalElement.querySelector("#modalMessage");
-    if (!modalMessage) return null;
-
-    container = document.createElement("div");
-    container.id = "bulkRegistrationInfo";
-    container.style.display = "none";
-    container.style.marginTop = "16px";
-    container.style.padding = "14px";
-    container.style.borderRadius = "16px";
-    container.style.background = "linear-gradient(145deg, rgba(255,255,255,.075), rgba(0,0,0,.16))";
-    container.style.border = "1px solid rgba(0, 220, 210, .18)";
-    container.style.boxShadow = "inset 2px 2px 8px rgba(255,255,255,.035), inset -3px -3px 10px rgba(0,0,0,.18)";
-    container.style.backdropFilter = "blur(10px)";
-    container.style.webkitBackdropFilter = "blur(10px)";
-    container.style.textAlign = "left";
-
-    modalMessage.insertAdjacentElement("afterend", container);
-    return container;
-}
-
-function renderBulkRegistrationInfo(container, info) {
-
-    if (!container) return;
-
-    if (!info) {
-        container.innerHTML = "";
-        container.style.display = "none";
-        return;
-    }
-
-    const escape = value => String(value ?? "—")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-
-    container.innerHTML = `
-        <div style="font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;opacity:.72;margin-bottom:10px;">BULK REGISTRATION</div>
-        <div style="font-size:15px;font-weight:800;line-height:1.25;margin-bottom:12px;overflow-wrap:anywhere;">${escape(info.school)}</div>
-        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">
-            <div style="padding:10px 8px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.06);text-align:center;">
-                <div style="font-size:9px;opacity:.62;font-weight:700;">HEADCOUNT</div>
-                <div style="font-size:20px;font-weight:900;margin-top:3px;">${escape(info.headcount)}</div>
-            </div>
-            <div style="padding:10px 8px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.06);text-align:center;">
-                <div style="font-size:9px;opacity:.62;font-weight:700;">PAYING</div>
-                <div style="font-size:20px;font-weight:900;margin-top:3px;">${escape(info.paying)}</div>
-            </div>
-            <div style="padding:10px 8px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.06);text-align:center;">
-                <div style="font-size:9px;opacity:.62;font-weight:700;">FREE</div>
-                <div style="font-size:20px;font-weight:900;margin-top:3px;">${escape(info.free)}</div>
-            </div>
-        </div>
-    `;
-
-    container.style.display = "block";
 }
 
 
@@ -2321,6 +2258,12 @@ function handleOverrideResponse(
         )
             .trim();
 
+    const school =
+        String(
+            data.school || ""
+        )
+            .trim();
+
 
     const timestamp =
         String(
@@ -2333,17 +2276,6 @@ function handleOverrideResponse(
         String(
             data.message ||
             "Manual override completed."
-        )
-            .trim();
-
-
-    const school =
-        String(
-            data.school ||
-            data.schoolName ||
-            data.organization ||
-            data.institution ||
-            ""
         )
             .trim();
 
@@ -2375,9 +2307,7 @@ function handleOverrideResponse(
             "SCAN SUCCESSFULLY",
             safeName,
             safeTimestamp,
-            message,
-            null,
-            school
+            message
         );
 
 
@@ -2432,9 +2362,7 @@ function handleOverrideResponse(
             "ALREADY SCANNED",
             safeName,
             safeTimestamp,
-            message,
-            null,
-            school
+            message
         );
 
 
