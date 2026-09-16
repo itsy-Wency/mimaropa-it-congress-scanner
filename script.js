@@ -53,6 +53,21 @@ const resultTime =
 const resultMessage =
     document.getElementById("resultMessage");
 
+const bulkRegistrationInfo =
+    document.getElementById("bulkRegistrationInfo");
+
+const modalSchool =
+    document.getElementById("modalSchool");
+
+const modalHeadcount =
+    document.getElementById("modalHeadcount");
+
+const modalPaying =
+    document.getElementById("modalPaying");
+
+const modalFree =
+    document.getElementById("modalFree");
+
 const overrideButton =
     document.getElementById("overrideButton");
 
@@ -639,52 +654,30 @@ function processCheckIn(attendeeId) {
             text
         );
 
-        /*
-         * Apps Script web-app responses can sometimes contain
-         * surrounding whitespace or a wrapper around the JSON.
-         * Extract the JSON object before declaring the request
-         * failed. This prevents a successful Sheet write from
-         * being incorrectly shown as a CONNECTION ERROR.
-         */
-        let result = null;
-        const rawText = String(text || "").trim();
+
+        let result;
+
 
         try {
-            result = JSON.parse(rawText);
-        } catch (error) {
-            const firstBrace = rawText.indexOf("{");
-            const lastBrace = rawText.lastIndexOf("}");
 
-            if (
-                firstBrace !== -1 &&
-                lastBrace > firstBrace
-            ) {
-                try {
-                    result = JSON.parse(
-                        rawText.substring(
-                            firstBrace,
-                            lastBrace + 1
-                        )
-                    );
-                } catch (nestedError) {
-                    console.error(
-                        "JSON parsing failed:",
-                        nestedError
-                    );
-                }
-            }
+            result =
+                JSON.parse(text);
 
-            if (!result) {
-                console.error(
-                    "Invalid Apps Script response:",
-                    rawText
-                );
-
-                throw new Error(
-                    "Invalid JSON response from Apps Script."
-                );
-            }
         }
+
+        catch (error) {
+
+            console.error(
+                "JSON parsing failed:",
+                error
+            );
+
+            throw new Error(
+                "Invalid JSON response from Apps Script."
+            );
+
+        }
+
 
         handleResponse(result);
 
@@ -698,7 +691,7 @@ function processCheckIn(attendeeId) {
         );
 
 
-        handleError(error, attendeeId, session);
+        handleError(error);
 
     });
 
@@ -840,13 +833,6 @@ function handleResponse(res) {
             .trim();
 
 
-    const school =
-        String(
-            data.school || ""
-        )
-            .trim();
-
-
     const timestamp =
         String(
             data.timestamp || ""
@@ -860,47 +846,11 @@ function handleResponse(res) {
             "No additional information was provided."
         )
             .trim();
-    /* ---------------------------------------------------------
-       BULK REGISTRATION INFORMATION
-    --------------------------------------------------------- */
 
-    const bulkFlag =
-        data.isBulk === true ||
-        String(data.isBulk || "").toLowerCase() === "true" ||
-        String(data.isBulk || "") === "1" ||
-        String(data.attendeeId || "").toUpperCase().startsWith("ATT-BLK-");
 
     const bulkInfo =
-        bulkFlag
-            ? {
-                isBulk: true,
+        normalizeBulkInfo(data);
 
-                school:
-                    String(
-                        data.school || ""
-                    ).trim(),
-
-                headcount:
-                    Number(
-                        data.headcount || 0
-                    ),
-
-                free:
-                    Number(
-                        data.free || 0
-                    ),
-
-                payingParticipants:
-                    Number(
-                        data.payingParticipants ??
-                        Math.max(
-                            Number(data.headcount || 0) -
-                            Number(data.free || 0),
-                            0
-                        )
-                    )
-            }
-            : null;
 
     console.log(
         "Normalized scan response:",
@@ -910,11 +860,10 @@ function handleResponse(res) {
             name: name,
             attendeeId: attendeeId,
             timestamp: timestamp,
-            message: message
+            message: message,
+            bulkInfo: bulkInfo
         }
     );
-
-    
 
 
     /* =========================================================
@@ -963,7 +912,8 @@ function handleResponse(res) {
             "SCAN SUCCESSFULLY",
             safeName,
             safeTimestamp,
-            safeMessage
+            safeMessage,
+            bulkInfo
         );
 
 
@@ -974,9 +924,7 @@ function handleResponse(res) {
             attendeeId,
             safeTimestamp,
             safeMessage,
-            bulkInfo,
-            school
-
+            bulkInfo
         );
 
 
@@ -1023,7 +971,8 @@ function handleResponse(res) {
             "ALREADY SCANNED",
             safeName,
             safeTimestamp,
-            safeMessage
+            safeMessage,
+            bulkInfo
         );
 
 
@@ -1034,8 +983,7 @@ function handleResponse(res) {
             attendeeId,
             safeTimestamp,
             safeMessage,
-            bulkInfo,
-            school
+            bulkInfo
         );
 
 
@@ -1081,7 +1029,8 @@ function handleResponse(res) {
             "TRY AGAIN",
             safeName,
             safeTimestamp,
-            safeMessage
+            safeMessage,
+            bulkInfo
         );
 
 
@@ -1092,8 +1041,7 @@ function handleResponse(res) {
             attendeeId,
             safeTimestamp,
             safeMessage,
-            null,
-            school
+            bulkInfo
         );
 
 
@@ -1142,9 +1090,7 @@ function handleResponse(res) {
         safeName,
         attendeeId,
         safeTimestamp,
-        safeMessage,
-        null,
-        school
+        safeMessage
     );
 
 
@@ -1174,175 +1120,42 @@ function finishProcessing() {
    HANDLE REQUEST ERROR
 ========================================================= */
 
-function handleError(error, attendeeId = "", session = "") {
+function handleError(error) {
 
-    console.error("Request error:", error);
-
-    /*
-     * A Google Apps Script write may succeed even when the browser
-     * cannot read the redirected cross-origin POST response.
-     * Verify the real Sheet state before reporting CONNECTION ERROR.
-     */
-    verifyScanViaJsonp(attendeeId, session)
-        .then(result => {
-
-            if (result && result.verified === true) {
-                console.warn(
-                    "Scan verified from Google Sheets after network error:",
-                    result
-                );
-
-                /* If the stored timestamp is recent, the failed POST
-                   almost certainly completed the requested operation. */
-                const requestAge =
-                    Date.now() - Number(result.actionTimestampMs || 0);
-
-                const requestedStation =
-                    String(session || "").toUpperCase();
-
-                const recentWrite =
-                    result.actionTimestampMs > 0 &&
-                    requestAge >= -5000 &&
-                    requestAge <= 30000;
-
-                if (
-                    recentWrite &&
-                    (
-                        result.status === "ALREADY_SCANNED" ||
-                        result.status === "SUCCESS"
-                    )
-                ) {
-                    result.status = "SUCCESS";
-                    result.displayStatus = "Scan Successfully";
-                    result.message =
-                        requestedStation === "ATTENDANCE"
-                            ? "Attendance recorded successfully."
-                            : requestedStation === "AM_SNACK"
-                                ? "AM Snack recorded successfully."
-                                : requestedStation === "PM_SNACK"
-                                    ? "PM Snack recorded successfully."
-                                    : result.message;
-                }
-
-                handleResponse(result);
-                return;
-            }
-
-            throw new Error("Scan could not be verified from Google Sheets.");
-        })
-        .catch(verificationError => {
-
-            console.error(
-                "Scan verification failed:",
-                verificationError
-            );
-
-            playSound("error");
-
-            const timestamp = getCurrentTimestamp();
-
-            updateStatus(
-                "error",
-                "CONNECTION ERROR",
-                "",
-                timestamp,
-                "Unable to communicate with the check-in server. Please try again."
-            );
-
-            showResultModal(
-                "error",
-                "TRY AGAIN",
-                "",
-                attendeeId,
-                timestamp,
-                "Unable to communicate with the check-in server. Please try again."
-            );
-
-            finishProcessing();
-        });
-}
+    console.error(
+        "Request error:",
+        error
+    );
 
 
-/* =========================================================
-   VERIFY SCAN AFTER A NETWORK/CORS FAILURE
-========================================================= */
+    playSound("error");
 
-function verifyScanViaJsonp(attendeeId, session) {
 
-    return new Promise((resolve, reject) => {
+    const timestamp =
+        getCurrentTimestamp();
 
-        const cleanId = String(attendeeId || "")
-            .trim()
-            .toUpperCase();
 
-        const cleanSession = String(session || "")
-            .trim()
-            .toUpperCase();
+    updateStatus(
+        "error",
+        "CONNECTION ERROR",
+        "",
+        timestamp,
+        "Unable to communicate with the check-in server. Please try again."
+    );
 
-        if (!cleanId || !cleanSession) {
-            reject(new Error("Missing attendee ID or station for verification."));
-            return;
-        }
 
-        const callbackName =
-            "scanVerify_" + Date.now() + "_" +
-            Math.floor(Math.random() * 100000);
+    showResultModal(
+        "error",
+        "TRY AGAIN",
+        "",
+        "",
+        timestamp,
+        "Unable to communicate with the check-in server. Please try again."
+    );
 
-        const script = document.createElement("script");
-        let finished = false;
 
-        const cleanup = () => {
-            if (script.parentNode) {
-                script.parentNode.removeChild(script);
-            }
-            try {
-                delete window[callbackName];
-            } catch (error) {
-                window[callbackName] = undefined;
-            }
-        };
+    finishProcessing();
 
-        const timeout = setTimeout(() => {
-            if (finished) return;
-            finished = true;
-            cleanup();
-            reject(new Error("Google Sheets verification timed out."));
-        }, 8000);
-
-        window[callbackName] = result => {
-            if (finished) return;
-
-            finished = true;
-            clearTimeout(timeout);
-            cleanup();
-
-            if (result && result.verified === true) {
-                resolve(result);
-            } else {
-                reject(new Error("Google Sheets verification returned no matching record."));
-            }
-        };
-
-        script.onerror = () => {
-            if (finished) return;
-
-            finished = true;
-            clearTimeout(timeout);
-            cleanup();
-            reject(new Error("Unable to load the verification endpoint."));
-        };
-
-        script.src =
-            DEPLOYED_WEB_APP_URL +
-            "?action=verifyScan" +
-            "&attendeeId=" + encodeURIComponent(cleanId) +
-            "&session=" + encodeURIComponent(cleanSession) +
-            "&callback=" + encodeURIComponent(callbackName) +
-            "&_=" + Date.now();
-
-        script.async = true;
-        document.head.appendChild(script);
-    });
 }
 
 
@@ -1355,7 +1168,8 @@ function updateStatus(
     title,
     name,
     timestamp,
-    message
+    message,
+    bulkInfo = null
 ) {
 
     if (!statusBox) {
@@ -1401,6 +1215,12 @@ function updateStatus(
             "Select a station and scan an attendee QR code.";
 
     }
+
+
+    renderBulkRegistrationInfo(
+        bulkRegistrationInfo,
+        bulkInfo
+    );
 
 
     updateResultIcon(type);
@@ -1494,328 +1314,254 @@ function showResultModal(
     attendeeId,
     timestamp,
     message,
-    bulkInfo = null,
-    school = ""
+    bulkInfo = null
 ) {
-    const modalElement =
-        document.getElementById("resultModal");
+    const modalElement = document.getElementById("resultModal");
 
     if (!modalElement) {
         console.error("Result modal element not found.");
         return;
     }
 
+    /* -----------------------------------------------------
+       GET MODAL ELEMENTS
+    ----------------------------------------------------- */
+
+    const modalIcon =
+        document.getElementById("modalIcon");
+
+    const modalStatus =
+        document.getElementById("modalStatus");
+
+    const modalName =
+        document.getElementById("modalName");
+
+    const modalId =
+        document.getElementById("modalId");
+
+    const modalTime =
+        document.getElementById("modalTime");
+
+    const modalMessage =
+        document.getElementById("modalMessage");
+
     /*
-     * Everything inside this function is protected so that a
-     * presentation problem can NEVER turn a successfully
-     * recorded scan into a CONNECTION ERROR.
+     * IMPORTANT:
+     * The HTML already contains #bulkRegistrationInfo.
+     * Reuse that container instead of creating another one.
      */
-    try {
+    const bulkInfoContainer =
+        getOrCreateBulkInfoContainer(modalElement);
 
-        const modalIcon =
-            document.getElementById("modalIcon");
+    /* -----------------------------------------------------
+       NORMALIZE DATA
+    ----------------------------------------------------- */
 
-        const modalStatus =
-            document.getElementById("modalStatus");
+    const safeType =
+        String(type || "error").toLowerCase();
 
-        const modalName =
-            document.getElementById("modalName");
+    const safeStatus =
+        String(status || "TRY AGAIN");
 
-        const modalId =
-            document.getElementById("modalId");
+    const safeName =
+        String(name || attendeeId || "ATTENDEE");
 
-        const modalTime =
-            document.getElementById("modalTime");
+    const safeId =
+        String(attendeeId || "NO ATTENDEE ID");
 
-        const modalMessage =
-            document.getElementById("modalMessage");
+    const safeTimestamp =
+        String(timestamp || getCurrentTimestamp());
 
-        const individualSchool =
-            modalElement.querySelector(".individual-school");
+    const safeMessage =
+        String(
+            message ||
+            "Please try again."
+        );
 
-        const individualModalSchool =
-            document.getElementById("individualModalSchool");
+    /*
+     * A bulk QR always uses the ATT-BLK- prefix.
+     *
+     * This is intentionally determined from the actual attendee ID
+     * as a fallback, so the bulk summary still appears even if the
+     * backend sends bulk fields without an explicit isBulk flag.
+     */
+    const isBulk =
+        String(
+            bulkInfo &&
+            bulkInfo.isBulk !== undefined
+                ? bulkInfo.isBulk
+                : ""
+        ).toLowerCase() === "true" ||
+        /^ATT-BLK-/i.test(safeId) ||
+        (
+            bulkInfo &&
+            (
+                bulkInfo.school ||
+                bulkInfo.headcount !== undefined ||
+                bulkInfo.paying !== undefined ||
+                bulkInfo.payingParticipants !== undefined ||
+                bulkInfo.free !== undefined
+            )
+        );
 
-        const bulkRegistrationInfo =
-            document.getElementById("bulkRegistrationInfo");
+    /* -----------------------------------------------------
+       RESET MODAL
+    ----------------------------------------------------- */
 
-        const modalSchool =
-            document.getElementById("modalSchool");
+    modalElement.classList.remove(
+        "modal-success",
+        "modal-already",
+        "modal-error"
+    );
 
-        const modalHeadcount =
-            document.getElementById("modalHeadcount");
+    /*
+     * Hide the existing individual-school element.
+     *
+     * The requested individual layout is:
+     *
+     * SCAN SUCCESSFULLY
+     * FULL NAME
+     * ATTENDEE ID
+     *
+     * School must NOT appear in the individual modal.
+     */
+    const individualSchoolDisplay =
+        document.getElementById("individualSchoolDisplay");
 
-        const modalPaying =
-            document.getElementById("modalPaying");
+    if (individualSchoolDisplay) {
+        individualSchoolDisplay.style.display = "none";
+    }
 
-        const modalFree =
-            document.getElementById("modalFree");
+    /* -----------------------------------------------------
+       STATUS TYPE
+    ----------------------------------------------------- */
 
-        const safeType =
-            String(type || "error").toLowerCase();
+    if (safeType === "success") {
 
-        const safeStatus =
-            String(status || "TRY AGAIN");
+        modalElement.classList.add(
+            "modal-success"
+        );
 
-        const safeName =
-            String(
-                name ||
-                attendeeId ||
-                "ATTENDEE"
-            ).trim();
+        if (modalIcon) {
+            modalIcon.innerHTML =
+                '<i class="bi bi-check-lg"></i>';
+        }
 
-        const safeId =
-            String(
-                attendeeId ||
-                "NO ATTENDEE ID"
-            ).trim();
+        if (modalStatus) {
+            modalStatus.textContent =
+                "SCAN SUCCESSFULLY";
+        }
 
-        const safeTimestamp =
-            String(
-                timestamp ||
-                getCurrentTimestamp()
-            ).trim();
+    }
 
-        const safeMessage =
-            String(
-                message ||
-                "Please try again."
-            ).trim();
+    else if (safeType === "already") {
 
-        /*
-         * Reset previous modal state.
-         */
-        modalElement.classList.remove(
-            "modal-success",
-            "modal-already",
+        modalElement.classList.add(
+            "modal-already"
+        );
+
+        if (modalIcon) {
+            modalIcon.innerHTML =
+                '<i class="bi bi-exclamation-lg"></i>';
+        }
+
+        if (modalStatus) {
+            modalStatus.textContent =
+                "ALREADY SCANNED";
+        }
+
+    }
+
+    else {
+
+        modalElement.classList.add(
             "modal-error"
         );
 
-        /*
-         * Set modal status.
-         */
-        if (safeType === "success") {
+        if (modalIcon) {
+            modalIcon.innerHTML =
+                '<i class="bi bi-x-lg"></i>';
+        }
 
-            modalElement.classList.add(
-                "modal-success"
+        if (modalStatus) {
+            modalStatus.textContent =
+                safeStatus;
+        }
+    }
+
+    /* -----------------------------------------------------
+       POPULATE NAME + ID
+    ----------------------------------------------------- */
+
+    if (modalName) {
+        modalName.textContent =
+            safeName;
+    }
+
+    if (modalId) {
+        modalId.textContent =
+            safeId;
+    }
+
+    /*
+     * Keep the exact timestamp returned by Code.gs.
+     * Do not rebuild or replace it on the frontend.
+     */
+    if (modalTime) {
+        modalTime.textContent =
+            safeTimestamp;
+    }
+
+    if (modalMessage) {
+        modalMessage.textContent =
+            safeMessage;
+    }
+
+    /* -----------------------------------------------------
+       BULK ONLY
+    ----------------------------------------------------- */
+
+    /*
+     * Move the existing bulk summary directly AFTER the attendee ID
+     * and BEFORE the timestamp.
+     *
+     * This produces:
+     *
+     * GOJO SATORU
+     * ATT-BLK-SATORU1
+     * REGISTRATION SUMMARY
+     * MEOWMEOW UNIVERSITY
+     * HEADCOUNT / PAYING / FREE
+     * timestamp
+     *
+     * For individual scans the same container is hidden.
+     */
+    if (bulkInfoContainer) {
+
+        const timeRow =
+            modalTime
+                ? modalTime.closest(".modal-time-row")
+                : null;
+
+        if (timeRow) {
+            timeRow.parentNode.insertBefore(
+                bulkInfoContainer,
+                timeRow
             );
-
-            if (modalIcon) {
-                modalIcon.innerHTML =
-                    '<i class="bi bi-check-lg"></i>';
-            }
-
-            if (modalStatus) {
-                modalStatus.textContent =
-                    "SCAN SUCCESSFULLY";
-            }
-
-        } else if (safeType === "already") {
-
-            modalElement.classList.add(
-                "modal-already"
-            );
-
-            if (modalIcon) {
-                modalIcon.innerHTML =
-                    '<i class="bi bi-exclamation-lg"></i>';
-            }
-
-            if (modalStatus) {
-                modalStatus.textContent =
-                    "ALREADY SCANNED";
-            }
-
-        } else {
-
-            modalElement.classList.add(
-                "modal-error"
-            );
-
-            if (modalIcon) {
-                modalIcon.innerHTML =
-                    '<i class="bi bi-x-lg"></i>';
-            }
-
-            if (modalStatus) {
-                modalStatus.textContent =
-                    safeStatus;
-            }
         }
 
-        /*
-         * Common attendee information.
-         */
-        if (modalName) {
-            modalName.textContent =
-                safeName;
-        }
+        renderBulkRegistrationInfo(
+            bulkInfoContainer,
+            isBulk ? bulkInfo : null
+        );
+    }
 
-        if (modalId) {
-            modalId.textContent =
-                safeId;
-        }
+    /* -----------------------------------------------------
+       SHOW MODAL
+    ----------------------------------------------------- */
 
-        if (modalTime) {
-            /*
-             * Attendance scans should explicitly show PRESENT.
-             * Snack scans retain their normal timestamp.
-             */
-            const selectedStation =
-                getSelectedStation();
+    try {
 
-            if (
-                selectedStation === "ATTENDANCE" &&
-                (
-                    safeType === "success" ||
-                    safeType === "already"
-                )
-            ) {
-                modalTime.textContent =
-                    "PRESENT • " +
-                    safeTimestamp;
-            } else {
-                modalTime.textContent =
-                    safeTimestamp;
-            }
-        }
-
-        if (modalMessage) {
-            modalMessage.textContent =
-                safeMessage;
-        }
-
-        /*
-         * =====================================================
-         * BULK REGISTRATION
-         * =====================================================
-         *
-         * Bulk is determined explicitly from bulkInfo.
-         * The school belongs inside the registration summary.
-         */
-        const isBulk =
-            !!(
-                bulkInfo &&
-                bulkInfo.isBulk === true
-            );
-
-        if (isBulk) {
-
-            if (bulkRegistrationInfo) {
-                bulkRegistrationInfo.style.display =
-                    "block";
-            }
-
-            if (individualSchool) {
-                individualSchool.style.display =
-                    "none";
-            }
-
-            if (individualModalSchool) {
-                individualModalSchool.textContent =
-                    "";
-            }
-
-            if (modalSchool) {
-                modalSchool.textContent =
-                    String(
-                        bulkInfo.school ||
-                        "School Not Specified"
-                    ).trim();
-            }
-
-            if (modalHeadcount) {
-                modalHeadcount.textContent =
-                    Number(
-                        bulkInfo.headcount || 0
-                    ).toLocaleString();
-            }
-
-            if (modalPaying) {
-                modalPaying.textContent =
-                    Number(
-                        bulkInfo.payingParticipants || 0
-                    ).toLocaleString();
-            }
-
-            if (modalFree) {
-                modalFree.textContent =
-                    Number(
-                        bulkInfo.free || 0
-                    ).toLocaleString();
-            }
-
-            /*
-             * Hide the obsolete generic school placeholder
-             * outside the bulk summary.
-             */
-            const modalContent =
-                modalElement.querySelector(
-                    ".modal-content"
-                );
-
-            if (modalContent) {
-
-                modalContent
-                    .querySelectorAll("*")
-                    .forEach(element => {
-
-                        if (
-                            bulkRegistrationInfo &&
-                            bulkRegistrationInfo.contains(
-                                element
-                            )
-                        ) {
-                            return;
-                        }
-
-                        const text =
-                            String(
-                                element.textContent ||
-                                ""
-                            )
-                                .replace(/\s+/g, " ")
-                                .trim()
-                                .toUpperCase();
-
-                        if (
-                            text ===
-                                "SCHOOL / ORGANIZATION" ||
-                            text ===
-                                "SCHOOL / ORGANIZATION -"
-                        ) {
-                            element.style.display =
-                                "none";
-                        }
-                    });
-            }
-
-        } else {
-
-            /*
-             * INDIVIDUAL REGISTRATION
-             * Show ONLY the actual school value returned from Column F.
-             * There is no SCHOOL / ORGANIZATION placeholder or label.
-             */
-            if (bulkRegistrationInfo) {
-                bulkRegistrationInfo.style.display = "none";
-            }
-
-            if (individualSchool) {
-                individualSchool.style.display = school ? "block" : "none";
-            }
-
-            if (individualModalSchool) {
-                individualModalSchool.textContent =
-                    String(school || "").trim();
-            }
-        }
-
-        /*
-         * =====================================================
-         * SHOW MODAL
-         * =====================================================
-         */
         const modal =
             bootstrap.Modal.getOrCreateInstance(
                 modalElement,
@@ -1828,10 +1574,14 @@ function showResultModal(
 
         modal.show();
 
+        /*
+         * Force the modal to the front.
+         * This is particularly useful on mobile browsers
+         * where scanner/video elements may create stacking contexts.
+         */
         requestAnimationFrame(() => {
 
-            modalElement.style.zIndex =
-                "1060";
+            modalElement.style.zIndex = "1060";
 
             const backdrop =
                 document.querySelector(
@@ -1839,46 +1589,240 @@ function showResultModal(
                 );
 
             if (backdrop) {
-                backdrop.style.zIndex =
-                    "1055";
+                backdrop.style.zIndex = "1055";
             }
+
         });
 
-    } catch (error) {
+    }
 
-        /*
-         * IMPORTANT:
-         * Do NOT throw this error back into the fetch promise.
-         * The Sheet operation has already succeeded.
-         */
+    catch (error) {
+
         console.error(
-            "Result modal display error:",
+            "Unable to display result modal:",
             error
         );
 
         /*
-         * Keep the successful result visible in the
-         * main status panel instead of converting it
-         * into a CONNECTION ERROR.
+         * Fallback:
+         * Keep the result visible in the main status panel.
          */
         updateStatus(
-            String(type || "error").toLowerCase(),
-            String(status || "TRY AGAIN"),
-            String(
-                name ||
-                attendeeId ||
-                "ATTENDEE"
-            ),
-            String(
-                timestamp ||
-                getCurrentTimestamp()
-            ),
-            String(
-                message ||
-                "Check-in recorded successfully."
-            )
+            safeType,
+            safeStatus,
+            safeName,
+            safeTimestamp,
+            safeMessage,
+            isBulk ? bulkInfo : null
         );
     }
+}
+
+
+/* =========================================================
+   BULK REGISTRATION DATA
+========================================================= */
+
+function normalizeBulkInfo(data) {
+    if (!data || typeof data !== "object") {
+        return null;
+    }
+
+    /*
+     * Apps Script may return bulk values either directly or inside
+     * data.bulkInfo. Support both response shapes.
+     */
+    const source =
+        data.bulkInfo &&
+        typeof data.bulkInfo === "object"
+            ? data.bulkInfo
+            : data;
+
+    const school = firstValue(
+        source.school,
+        source.schoolName,
+        source.organization,
+        source.institution
+    );
+
+    const headcount = toNumber(firstValue(
+        source.headcount,
+        source.headCount,
+        source.totalHeadcount,
+        source.total_headcount,
+        source.totalParticipants,
+        source.totalParticipantsCount
+    ));
+
+    const free = toNumber(firstValue(
+        source.free,
+        source.freeCount,
+        source.freeParticipants,
+        source.freeRegistration,
+        source.freeRegistrations,
+        source.free_headcount
+    ));
+
+    /*
+     * PAYEE / PAYING PARTICIPANTS
+     *
+     * The Group_Bulk Attendees sheet uses:
+     * M = HEADCOUNT
+     * N = FREE
+     * O = PAYEE
+     *
+     * Prefer the actual payee/paying value supplied by the backend.
+     * If it is unavailable, calculate HEADCOUNT - FREE as a safe fallback.
+     */
+    let paying = toNumber(firstValue(
+        source.payee,
+        source.payeeCount,
+        source.paying,
+        source.payingParticipants,
+        source.paid,
+        source.paidParticipants,
+        source.payerCount
+    ));
+
+    if (headcount !== null && paying === null && free !== null) {
+        paying = Math.max(
+            0,
+            headcount - free
+        );
+    }
+
+    const hasBulkData =
+        source.isBulk === true ||
+        /^ATT-BLK-/i.test(
+            String(data.attendeeId || "")
+        ) ||
+        school !== null ||
+        headcount !== null ||
+        free !== null ||
+        paying !== null;
+
+    if (!hasBulkData) {
+        return null;
+    }
+
+    return {
+        isBulk: true,
+        school: school || "School Not Specified",
+        headcount:
+            headcount !== null
+                ? headcount
+                : "—",
+        paying:
+            paying !== null
+                ? paying
+                : "—",
+        free:
+            free !== null
+                ? free
+                : "—"
+    };
+}
+
+
+function firstValue(...values) {
+    for (const value of values) {
+        if (value !== undefined && value !== null && String(value).trim() !== "") {
+            return value;
+        }
+    }
+    return null;
+}
+
+function toNumber(value) {
+    if (value === undefined || value === null || String(value).trim() === "") {
+        return null;
+    }
+
+    const number = Number(String(value).replace(/,/g, "").trim());
+    return Number.isFinite(number) ? number : null;
+}
+
+function getOrCreateBulkInfoContainer(modalElement) {
+
+    if (!modalElement) return null;
+
+    let container = modalElement.querySelector("#bulkRegistrationInfo");
+    if (container) return container;
+
+    const modalMessage = modalElement.querySelector("#modalMessage");
+    if (!modalMessage) return null;
+
+    container = document.createElement("div");
+    container.id = "bulkRegistrationInfo";
+    container.style.display = "none";
+    container.style.marginTop = "16px";
+    container.style.padding = "14px";
+    container.style.borderRadius = "16px";
+    container.style.background = "linear-gradient(145deg, rgba(255,255,255,.075), rgba(0,0,0,.16))";
+    container.style.border = "1px solid rgba(0, 220, 210, .18)";
+    container.style.boxShadow = "inset 2px 2px 8px rgba(255,255,255,.035), inset -3px -3px 10px rgba(0,0,0,.18)";
+    container.style.backdropFilter = "blur(10px)";
+    container.style.webkitBackdropFilter = "blur(10px)";
+    container.style.textAlign = "left";
+
+    modalMessage.insertAdjacentElement("afterend", container);
+    return container;
+}
+
+function renderBulkRegistrationInfo(container, info) {
+
+    if (!container) return;
+
+    if (!info || info.isBulk !== true) {
+        container.innerHTML = "";
+        container.style.display = "none";
+        return;
+    }
+
+    const escape = value =>
+        String(value ?? "—")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+
+    container.innerHTML = `
+        <div style="font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;opacity:.72;margin-bottom:10px;text-align:center;">
+            REGISTRATION SUMMARY
+        </div>
+
+        <div style="font-size:15px;font-weight:800;line-height:1.25;margin-bottom:12px;overflow-wrap:anywhere;text-align:center;">
+            ${escape(info.school)}
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">
+
+            <div style="padding:10px 8px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.06);text-align:center;">
+                <div style="font-size:9px;opacity:.62;font-weight:700;">HEADCOUNT</div>
+                <div style="font-size:20px;font-weight:900;margin-top:3px;">
+                    ${escape(info.headcount)}
+                </div>
+            </div>
+
+            <div style="padding:10px 8px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.06);text-align:center;">
+                <div style="font-size:9px;opacity:.62;font-weight:700;">PAYING</div>
+                <div style="font-size:20px;font-weight:900;margin-top:3px;">
+                    ${escape(info.paying)}
+                </div>
+            </div>
+
+            <div style="padding:10px 8px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.06);text-align:center;">
+                <div style="font-size:9px;opacity:.62;font-weight:700;">FREE</div>
+                <div style="font-size:20px;font-weight:900;margin-top:3px;">
+                    ${escape(info.free)}
+                </div>
+            </div>
+
+        </div>
+    `;
+
+    container.style.display = "block";
 }
 
 
@@ -2350,12 +2294,6 @@ function handleOverrideResponse(
         )
             .trim();
 
-    const school =
-        String(
-            data.school || ""
-        )
-            .trim();
-
 
     const timestamp =
         String(
@@ -2409,9 +2347,7 @@ function handleOverrideResponse(
             safeName,
             attendeeId,
             safeTimestamp,
-            message,
-            null,
-            school
+            message
         );
 
 
@@ -2464,9 +2400,7 @@ function handleOverrideResponse(
             safeName,
             attendeeId,
             safeTimestamp,
-            message,
-            null,
-            school
+            message
         );
 
 
