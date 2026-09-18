@@ -680,15 +680,51 @@ function processCheckIn(attendeeId) {
     });
 }
 
+
 /* =========================================================
    HANDLE RESPONSE
 ========================================================= */
 
 function handleResponse(res) {
+
     console.log(
         "Processed result:",
         res
     );
+
+
+    /*
+        IMPORTANT
+
+        Apps Script responses may be returned as:
+
+        1. Direct object:
+
+        {
+            status: "SUCCESS",
+            name: "CASEY JASPER CHAVEZ",
+            attendeeId: "ATT-IND-CHAVEZ1",
+            timestamp: "...",
+            message: "..."
+        }
+
+        OR:
+
+        2. Wrapped object:
+
+        {
+            found: true,
+            result: {
+                status: "SUCCESS",
+                name: "CASEY JASPER CHAVEZ",
+                attendeeId: "ATT-IND-CHAVEZ1",
+                timestamp: "...",
+                message: "..."
+            }
+        }
+
+        This normalization handles BOTH.
+    */
 
     const data =
         res &&
@@ -696,6 +732,7 @@ function handleResponse(res) {
         typeof res.result === "object"
             ? res.result
             : res;
+
 
     /* ---------------------------------------------------------
        INVALID RESPONSE
@@ -705,15 +742,19 @@ function handleResponse(res) {
         !data ||
         typeof data !== "object"
     ) {
+
         console.error(
             "Invalid Apps Script response:",
             res
         );
 
+
         playSound("error");
+
 
         const timestamp =
             getCurrentTimestamp();
+
 
         updateStatus(
             "error",
@@ -722,6 +763,7 @@ function handleResponse(res) {
             timestamp,
             "The check-in server returned an invalid response."
         );
+
 
         showResultModal(
             "error",
@@ -732,10 +774,13 @@ function handleResponse(res) {
             "The check-in server returned an invalid response."
         );
 
+
         finishProcessing();
 
         return;
+
     }
+
 
     /* ---------------------------------------------------------
        NORMALIZE RESPONSE VALUES
@@ -748,6 +793,7 @@ function handleResponse(res) {
             .trim()
             .toUpperCase();
 
+
     const displayStatus =
         String(
             data.displayStatus ||
@@ -755,12 +801,20 @@ function handleResponse(res) {
         )
             .trim();
 
+
     const attendeeId =
         String(
             data.attendeeId || ""
         )
             .trim();
 
+    /*
+     * PRIMARY SOURCE: Apps Script response.
+     * FALLBACK SOURCE: attendee directory loaded from the same
+     * Google Sheet using ?action=attendees.
+     * This prevents the UI from falling back to ATTENDEE when
+     * the scan itself was successfully recorded.
+     */
     const safeAttendeeId = (typeof attendeeId !== "undefined" && attendeeId) 
         ? attendeeId 
         : (data && (data.attendeeId || data.id)) || "";
@@ -786,11 +840,13 @@ function handleResponse(res) {
         )
             .trim();
 
+
     const timestamp =
         String(
             data.timestamp || ""
         )
             .trim();
+
 
     const message =
         String(
@@ -798,7 +854,6 @@ function handleResponse(res) {
             "No additional information was provided."
         )
             .trim();
-
     /* ---------------------------------------------------------
        BULK REGISTRATION INFORMATION
     --------------------------------------------------------- */
@@ -861,6 +916,9 @@ function handleResponse(res) {
         }
     );
 
+    
+
+
     /* =========================================================
        SUCCESS
     ========================================================= */
@@ -868,7 +926,23 @@ function handleResponse(res) {
     if (
         status === "SUCCESS"
     ) {
+
         playSound("success");
+
+
+        /*
+            If the backend sends the attendee name,
+            use it.
+
+            If the name is unavailable but the attendee ID
+            exists, display the attendee ID instead.
+
+            This prevents the misleading:
+
+            "ATTENDEE NOT IDENTIFIED"
+
+            message.
+        */
 
         const safeName =
             name ||
@@ -876,13 +950,16 @@ function handleResponse(res) {
             attendeeId ||
             "ATTENDEE";
 
+
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
 
+
         const safeMessage =
             message ||
             "Check-in recorded successfully.";
+
 
         updateStatus(
             "success",
@@ -891,6 +968,7 @@ function handleResponse(res) {
             safeTimestamp,
             safeMessage
         );
+
 
         showResultModal(
             "success",
@@ -901,14 +979,19 @@ function handleResponse(res) {
             safeMessage,
             bulkInfo,
             school
+
         );
 
+
         clearInput();
+
 
         finishProcessing();
 
         return;
+
     }
+
 
     /* =========================================================
        ALREADY SCANNED
@@ -918,7 +1001,9 @@ function handleResponse(res) {
         status === "ALREADY_SCANNED" ||
         status === "ALREADY_PROCESSED"
     ) {
+
         playSound("error");
+
 
         const safeName =
             name ||
@@ -926,13 +1011,16 @@ function handleResponse(res) {
             attendeeId ||
             "ATTENDEE";
 
+
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
 
+
         const safeMessage =
             message ||
             "This attendee has already been recorded.";
+
 
         updateStatus(
             "already",
@@ -941,6 +1029,7 @@ function handleResponse(res) {
             safeTimestamp,
             safeMessage
         );
+
 
         showResultModal(
             "already",
@@ -953,12 +1042,16 @@ function handleResponse(res) {
             school
         );
 
+
         clearInput();
+
 
         finishProcessing();
 
         return;
+
     }
+
 
     /* =========================================================
        BLOCKED / VALIDATION FAILURE
@@ -967,7 +1060,9 @@ function handleResponse(res) {
     if (
         status === "BLOCKED"
     ) {
+
         playSound("error");
+
 
         const safeName =
             name ||
@@ -975,13 +1070,16 @@ function handleResponse(res) {
             attendeeId ||
             "ATTENDEE";
 
+
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
 
+
         const safeMessage =
             message ||
             "This check-in cannot be processed yet.";
+
 
         updateStatus(
             "error",
@@ -990,6 +1088,7 @@ function handleResponse(res) {
             safeTimestamp,
             safeMessage
         );
+
 
         showResultModal(
             "error",
@@ -1002,10 +1101,13 @@ function handleResponse(res) {
             school
         );
 
+
         finishProcessing();
 
         return;
+
     }
+
 
     /* =========================================================
        INVALID / UNKNOWN ERROR
@@ -1013,18 +1115,22 @@ function handleResponse(res) {
 
     playSound("error");
 
+
     const safeName =
         name ||
         attendeeId ||
         "";
 
+
     const safeTimestamp =
         timestamp ||
         getCurrentTimestamp();
 
+
     const safeMessage =
         message ||
         "Unable to process this check-in. Please try again.";
+
 
     updateStatus(
         "error",
@@ -1033,6 +1139,7 @@ function handleResponse(res) {
         safeTimestamp,
         safeMessage
     );
+
 
     showResultModal(
         "error",
@@ -1045,34 +1152,47 @@ function handleResponse(res) {
         school
     );
 
+
     finishProcessing();
+
 }
+
 
 /* =========================================================
    FINISH PROCESSING
 ========================================================= */
 
 function finishProcessing() {
+
     setTimeout(() => {
+
         isProcessing = false;
+
         setProcessingState(false);
+
     }, 500);
+
 }
+
 
 /* =========================================================
    HANDLE REQUEST ERROR
 ========================================================= */
 
 function handleError(error) {
+
     console.error(
         "Request error:",
         error
     );
 
+
     playSound("error");
+
 
     const timestamp =
         getCurrentTimestamp();
+
 
     updateStatus(
         "error",
@@ -1081,6 +1201,7 @@ function handleError(error) {
         timestamp,
         "Unable to communicate with the check-in server. Please try again."
     );
+
 
     showResultModal(
         "error",
@@ -1091,8 +1212,11 @@ function handleError(error) {
         "Unable to communicate with the check-in server. Please try again."
     );
 
+
     finishProcessing();
+
 }
+
 
 /* =========================================================
    STATUS DISPLAY
@@ -1105,85 +1229,130 @@ function updateStatus(
     timestamp,
     message
 ) {
+
     if (!statusBox) {
         return;
     }
 
+
     statusBox.className =
         `result-panel ${type}`;
 
+
     if (resultTitle) {
+
         resultTitle.textContent =
             title ||
             "READY TO SCAN";
+
     }
 
+
     if (resultName) {
+
         resultName.textContent =
             name ||
             "No attendee scanned";
+
     }
 
+
     if (resultTime) {
+
         resultTime.textContent =
             timestamp ||
             "Waiting for QR code...";
+
     }
 
+
     if (resultMessage) {
+
         resultMessage.textContent =
             message ||
             "Select a station and scan an attendee QR code.";
+
     }
 
+
     updateResultIcon(type);
+
 }
+
 
 /* =========================================================
    RESULT ICON
 ========================================================= */
 
 function updateResultIcon(type) {
+
     if (!statusBox) {
         return;
     }
+
 
     const icon =
         statusBox.querySelector(
             ".result-icon i"
         );
 
+
     if (!icon) {
         return;
     }
 
+
     icon.className =
         "bi";
+
 
     if (
         type === "success"
     ) {
+
         icon.classList.add(
             "bi-check-circle-fill"
         );
-    } else if (
+
+    }
+
+
+    else if (
         type === "already"
     ) {
+
         icon.classList.add(
             "bi-exclamation-circle-fill"
         );
-    } else if (
+
+    }
+
+
+    else if (
         type === "error"
     ) {
+
         icon.classList.add(
             "bi-x-circle-fill"
         );
-    } else {
+
+    }
+
+
+    else {
+
         icon.classList.add(
             "bi-qr-code"
         );
+
     }
+
 }
+
+
+/* =========================================================
+   RESULT MODAL
+========================================================= */
 
 /* =========================================================
    RESULT MODAL
@@ -1211,37 +1380,79 @@ function showResultModal(
        GET MODAL ELEMENTS
     ----------------------------------------------------- */
 
-    const modalIcon = document.getElementById("modalIcon");
-    const modalStatus = document.getElementById("modalStatus");
-    const modalName = document.getElementById("modalName");
-    const modalId = document.getElementById("modalId");
-    const modalTime = document.getElementById("modalTime");
-    const modalMessage = document.getElementById("modalMessage");
+    const modalIcon =
+        document.getElementById("modalIcon");
 
+    const modalStatus =
+        document.getElementById("modalStatus");
+
+    const modalName =
+        document.getElementById("modalName");
+
+    const modalId =
+        document.getElementById("modalId");
+
+    const modalTime =
+        document.getElementById("modalTime");
+
+    const modalMessage =
+        document.getElementById("modalMessage");
+
+    /* Individual school block (used only for individual registrations). */
     const individualSchool =
         document.getElementById("individualSchoolDisplay") ||
         modalElement.querySelector(".individual-school");
 
-    const individualSchoolLabel = document.getElementById("individualSchoolLabel");
-    const individualModalSchool = document.getElementById("individualModalSchool");
+    const individualSchoolLabel =
+        document.getElementById("individualSchoolLabel");
+
+    const individualModalSchool =
+        document.getElementById("individualModalSchool");
+
 
     /* BULK REGISTRATION MODAL ELEMENTS */
-    const bulkRegistrationInfo = document.getElementById("bulkRegistrationInfo");
-    const modalSchool = document.getElementById("modalSchool");
-    const modalHeadcount = document.getElementById("modalHeadcount");
-    const modalPaying = document.getElementById("modalPaying");
-    const modalFree = document.getElementById("modalFree");
+
+    const bulkRegistrationInfo =
+        document.getElementById("bulkRegistrationInfo");
+
+    const modalSchool =
+        document.getElementById("modalSchool");
+
+    const modalHeadcount =
+        document.getElementById("modalHeadcount");
+
+    const modalPaying =
+        document.getElementById("modalPaying");
+
+    const modalFree =
+        document.getElementById("modalFree");
+
 
     /* -----------------------------------------------------
        NORMALIZE DATA
     ----------------------------------------------------- */
 
-    const safeType = String(type || "error").toLowerCase();
-    const safeStatus = String(status || "TRY AGAIN");
-    const safeName = String(name || "ATTENDEE NOT IDENTIFIED");
-    const safeId = String(attendeeId || "NO ATTENDEE ID");
-    const safeTimestamp = String(timestamp || getCurrentTimestamp());
-    const safeMessage = String(message || "Please try again.");
+    const safeType =
+        String(type || "error").toLowerCase();
+
+    const safeStatus =
+        String(status || "TRY AGAIN");
+
+    const safeName =
+        String(name || "ATTENDEE NOT IDENTIFIED");
+
+    const safeId =
+        String(attendeeId || "NO ATTENDEE ID");
+
+    const safeTimestamp =
+        String(timestamp || getCurrentTimestamp());
+
+    const safeMessage =
+        String(
+            message ||
+            "Please try again."
+        );
+
 
     /* -----------------------------------------------------
        RESET MODAL
@@ -1253,60 +1464,87 @@ function showResultModal(
         "modal-error"
     );
 
+
     /* -----------------------------------------------------
        STATUS TYPE
     ----------------------------------------------------- */
 
     if (safeType === "success") {
-        modalElement.classList.add("modal-success");
+
+        modalElement.classList.add(
+            "modal-success"
+        );
 
         if (modalIcon) {
-            modalIcon.innerHTML = '<i class="bi bi-check-lg"></i>';
+            modalIcon.innerHTML =
+                '<i class="bi bi-check-lg"></i>';
         }
 
         if (modalStatus) {
-            modalStatus.textContent = "SCAN SUCCESSFULLY";
+            modalStatus.textContent =
+                "SCAN SUCCESSFULLY";
         }
-    } else if (safeType === "already") {
-        modalElement.classList.add("modal-already");
+
+    }
+
+    else if (safeType === "already") {
+
+        modalElement.classList.add(
+            "modal-already"
+        );
 
         if (modalIcon) {
-            modalIcon.innerHTML = '<i class="bi bi-exclamation-lg"></i>';
+            modalIcon.innerHTML =
+                '<i class="bi bi-exclamation-lg"></i>';
         }
 
         if (modalStatus) {
-            modalStatus.textContent = "ALREADY SCANNED";
+            modalStatus.textContent =
+                "ALREADY SCANNED";
         }
-    } else {
-        modalElement.classList.add("modal-error");
+
+    }
+
+    else {
+
+        modalElement.classList.add(
+            "modal-error"
+        );
 
         if (modalIcon) {
-            modalIcon.innerHTML = '<i class="bi bi-x-lg"></i>';
+            modalIcon.innerHTML =
+                '<i class="bi bi-x-lg"></i>';
         }
 
         if (modalStatus) {
-            modalStatus.textContent = safeStatus;
+            modalStatus.textContent =
+                safeStatus;
         }
     }
+
 
     /* -----------------------------------------------------
        POPULATE ATTENDEE INFORMATION
     ----------------------------------------------------- */
 
     if (modalName) {
-        modalName.textContent = safeName;
+        modalName.textContent =
+            safeName;
     }
 
     if (modalId) {
-        modalId.textContent = safeId;
+        modalId.textContent =
+            safeId;
     }
 
     if (modalTime) {
-        modalTime.textContent = safeTimestamp;
+        modalTime.textContent =
+            safeTimestamp;
     }
 
     if (modalMessage) {
-        modalMessage.textContent = safeMessage;
+        modalMessage.textContent =
+            safeMessage;
     }
 
     /* ---------------------------------------------------------
@@ -1318,8 +1556,11 @@ function showResultModal(
         bulkInfo &&
         bulkInfo.isBulk === true
     ) {
+
+        /* Show ONLY the previous working bulk summary. */
         bulkRegistrationInfo.style.display = "block";
 
+        /* Bulk registrations use the bulk summary school field. */
         if (individualSchool) {
             individualSchool.style.display = "none";
         }
@@ -1328,11 +1569,12 @@ function showResultModal(
             bulkRegistrationInfo.querySelector(".bulk-school .bulk-label");
 
         if (bulkSchoolLabel) {
-            bulkSchoolLabel.textContent = "SCHOOL / ORGANIZATION";
+            bulkSchoolLabel.textContent = "BULK REGISTRATION";
         }
 
         if (modalSchool) {
-            modalSchool.textContent = bulkInfo.school || "School Not Specified";
+            modalSchool.textContent =
+                bulkInfo.school || "School Not Specified";
         }
 
         if (modalHeadcount) {
@@ -1349,7 +1591,37 @@ function showResultModal(
             modalFree.textContent =
                 Number(bulkInfo.free || 0).toLocaleString();
         }
-    } else {
+
+        /* Remove any duplicate generic placeholder outside the bulk box. */
+        const modalContent =
+            modalElement.querySelector(".modal-content");
+
+        if (modalContent) {
+            modalContent.querySelectorAll("*").forEach(element => {
+                if (bulkRegistrationInfo.contains(element)) {
+                    return;
+                }
+
+                const text =
+                    String(element.textContent || "")
+                        .replace(/\s+/g, " ")
+                        .trim()
+                        .toUpperCase();
+
+                if (
+                    text === "SCHOOL / ORGANIZATION" ||
+                    text === "SCHOOL / ORGANIZATION -"
+                ) {
+                    element.style.display = "none";
+                }
+            });
+        }
+
+    }
+
+    else {
+
+        /* Individual registration: display the actual School value from Column F. */
         if (bulkRegistrationInfo) {
             bulkRegistrationInfo.style.display = "none";
         }
@@ -1366,12 +1638,15 @@ function showResultModal(
                 school ||
                 (directoryRecordForSchool && directoryRecordForSchool.school) ||
                 ""
-            ).trim();
+            )
+                .trim();
 
         if (individualSchool) {
             individualSchool.style.display = actualSchool ? "block" : "none";
         }
 
+        /* The label SCHOOL / ORGANIZATION is obsolete.
+           Only the actual Column F value is shown. */
         document.getElementById("individualSchoolLabel")?.style.setProperty("display", "none");
 
         if (individualModalSchool) {
@@ -1379,6 +1654,7 @@ function showResultModal(
             individualModalSchool.style.display = actualSchool ? "block" : "none";
         }
 
+        /* Compatibility fallback for older HTML templates. */
         if (!individualSchool && actualSchool && modalName) {
             let fallbackSchool =
                 modalElement.querySelector("#fallbackIndividualSchool");
@@ -1395,35 +1671,64 @@ function showResultModal(
             fallbackSchool.textContent = actualSchool;
             fallbackSchool.style.display = "block";
         }
+
     }
+
 
     /* -----------------------------------------------------
        SHOW MODAL
     ----------------------------------------------------- */
 
     try {
-        const modal = bootstrap.Modal.getOrCreateInstance(
-            modalElement,
-            {
-                backdrop: true,
-                keyboard: true,
-                focus: true
-            }
-        );
+
+        const modal =
+            bootstrap.Modal.getOrCreateInstance(
+                modalElement,
+                {
+                    backdrop: true,
+                    keyboard: true,
+                    focus: true
+                }
+            );
 
         modal.show();
 
+        /*
+         * Force the modal to the front.
+         * This is particularly useful on mobile browsers
+         * where scanner/video elements may create stacking
+         * contexts.
+         */
+
         requestAnimationFrame(() => {
+
             modalElement.style.zIndex = "1060";
 
-            const backdrop = document.querySelector(".modal-backdrop");
+            const backdrop =
+                document.querySelector(
+                    ".modal-backdrop"
+                );
 
             if (backdrop) {
                 backdrop.style.zIndex = "1055";
             }
+
         });
-    } catch (error) {
-        console.error("Unable to display result modal:", error);
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Unable to display result modal:",
+            error
+        );
+
+        /*
+         * Fallback:
+         * If Bootstrap fails for any reason,
+         * keep the result visible in the main status panel.
+         */
 
         updateStatus(
             safeType,
@@ -1435,135 +1740,197 @@ function showResultModal(
     }
 }
 
+
 /* =========================================================
    SELECTED STATION
 ========================================================= */
 
 function getSelectedStation() {
+
     const selected =
         document.querySelector(
             'input[name="session"]:checked'
         );
 
+
     return selected
         ? selected.value
         : null;
+
 }
+
 
 /* =========================================================
    DISPLAY STATUS FALLBACK
 ========================================================= */
 
 function getDisplayStatus(status) {
+
     switch (status) {
+
         case "SUCCESS":
+
             return "SCAN SUCCESSFULLY";
 
+
         case "ALREADY_SCANNED":
+
         case "ALREADY_PROCESSED":
+
             return "ALREADY SCANNED";
 
+
         case "BLOCKED":
+
         case "INVALID":
+
         case "ERROR":
+
             return "TRY AGAIN";
 
+
         default:
+
             return "TRY AGAIN";
+
     }
+
 }
+
 
 /* =========================================================
    INPUT CLEAR
 ========================================================= */
 
 function clearInput() {
+
     if (searchInput) {
+
         searchInput.value = "";
+
     }
+
 }
+
 
 /* =========================================================
    PROCESSING STATE
 ========================================================= */
 
 function setProcessingState(processing) {
+
     if (!submitBtn) {
         return;
     }
 
+
     submitBtn.disabled =
         processing;
 
+
     if (processing) {
+
         submitBtn.innerHTML =
             `
             <i class="bi bi-arrow-repeat"></i>
             <span>VERIFYING</span>
             `;
-    } else {
+
+    }
+
+
+    else {
+
         submitBtn.innerHTML =
             `
             <i class="bi bi-arrow-right-circle"></i>
             <span>SUBMIT</span>
             `;
+
     }
+
 }
+
 
 /* =========================================================
    MANUAL OVERRIDE
 ========================================================= */
 
 function openOverrideModal() {
+
     if (overrideAttendeeId) {
+
         overrideAttendeeId.value =
             searchInput
                 ? searchInput.value
                     .trim()
                     .toUpperCase()
                 : "";
+
     }
 
+
     if (overridePin) {
+
         overridePin.value =
             "";
+
     }
+
 
     const modalElement =
         document.getElementById(
             "overrideModal"
         );
 
+
     if (!modalElement) {
+
         console.error(
             "Override modal element not found."
         );
 
         return;
+
     }
+
 
     const modal =
         bootstrap.Modal.getOrCreateInstance(
             modalElement
         );
 
+
     modal.show();
 
+
     setTimeout(() => {
+
         if (
             overrideAttendeeId &&
             overrideAttendeeId.value
         ) {
+
             if (overridePin) {
+
                 overridePin.focus();
+
             }
-        } else if (
+
+        }
+
+        else if (
             overrideAttendeeId
         ) {
+
             overrideAttendeeId.focus();
+
         }
+
     }, 300);
+
 }
+
 
 /* =========================================================
    PROCESS MANUAL OVERRIDE
@@ -1626,6 +1993,7 @@ function processManualOverride() {
     .then(text => {
         console.log("Manual override response:", text);
 
+        // Intercept Apps Script HTML crash pages before JSON parsing fails
         if (text.trim().startsWith("<!DOCTYPE") || text.includes("<html")) {
             throw new Error("Server execution timeout. Please try authorizing again.");
         }
@@ -1673,7 +2041,9 @@ function processManualOverride() {
             `;
         }
     });
+
 }
+
 
 /* =========================================================
    MANUAL OVERRIDE RESPONSE
@@ -1683,6 +2053,11 @@ function handleOverrideResponse(
     res,
     attendeeId
 ) {
+
+    /*
+        Normalize wrapped responses too.
+    */
+
     const data =
         res &&
         res.result &&
@@ -1690,8 +2065,11 @@ function handleOverrideResponse(
             ? res.result
             : res;
 
+
     if (!data || typeof data !== "object") {
+
         playSound("error");
+
 
         showResultModal(
             "error",
@@ -1702,8 +2080,11 @@ function handleOverrideResponse(
             "Invalid response from the check-in server."
         );
 
+
         return;
+
     }
+
 
     const status =
         String(
@@ -1737,11 +2118,13 @@ function handleOverrideResponse(
         )
             .trim();
 
+
     const timestamp =
         String(
             data.timestamp || ""
         )
             .trim();
+
 
     const message =
         String(
@@ -1750,6 +2133,7 @@ function handleOverrideResponse(
         )
             .trim();
 
+
     /* ---------------------------------------------------------
        SUCCESS
     --------------------------------------------------------- */
@@ -1757,7 +2141,9 @@ function handleOverrideResponse(
     if (
         status === "SUCCESS"
     ) {
+
         playSound("success");
+
 
         const safeName =
             name ||
@@ -1765,9 +2151,11 @@ function handleOverrideResponse(
             attendeeId ||
             "ATTENDEE";
 
+
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
+
 
         updateStatus(
             "success",
@@ -1776,6 +2164,7 @@ function handleOverrideResponse(
             safeTimestamp,
             message
         );
+
 
         showResultModal(
             "success",
@@ -1788,12 +2177,17 @@ function handleOverrideResponse(
             school
         );
 
+
         closeOverrideModal();
+
 
         clearInput();
 
+
         return;
+
     }
+
 
     /* ---------------------------------------------------------
        ALREADY SCANNED
@@ -1803,7 +2197,9 @@ function handleOverrideResponse(
         status === "ALREADY_SCANNED" ||
         status === "ALREADY_PROCESSED"
     ) {
+
         playSound("error");
+
 
         const safeName =
             name ||
@@ -1811,9 +2207,11 @@ function handleOverrideResponse(
             attendeeId ||
             "ATTENDEE";
 
+
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
+
 
         updateStatus(
             "already",
@@ -1822,6 +2220,7 @@ function handleOverrideResponse(
             safeTimestamp,
             message
         );
+
 
         showResultModal(
             "already",
@@ -1834,10 +2233,14 @@ function handleOverrideResponse(
             school
         );
 
+
         closeOverrideModal();
 
+
         return;
+
     }
+
 
     /* ---------------------------------------------------------
        INVALID PIN
@@ -1846,23 +2249,34 @@ function handleOverrideResponse(
     if (
         status === "INVALID_PIN"
     ) {
+
         playSound("error");
 
+
         if (overridePin) {
+
             overridePin.value =
                 "";
+
         }
+
 
         alert(
             "Invalid override PIN."
         );
 
+
         if (overridePin) {
+
             overridePin.focus();
+
         }
 
+
         return;
+
     }
+
 
     /* ---------------------------------------------------------
        OTHER ERROR
@@ -1870,14 +2284,17 @@ function handleOverrideResponse(
 
     playSound("error");
 
+
     const safeName =
         name ||
         attendeeId ||
         "";
 
+
     const safeTimestamp =
         timestamp ||
         getCurrentTimestamp();
+
 
     showResultModal(
         "error",
@@ -1887,31 +2304,43 @@ function handleOverrideResponse(
         safeTimestamp,
         message
     );
+
 }
+
 
 /* =========================================================
    CLOSE OVERRIDE MODAL
 ========================================================= */
 
 function closeOverrideModal() {
+
     const modalElement =
         document.getElementById(
             "overrideModal"
         );
 
+
     if (!modalElement) {
+
         return;
+
     }
+
 
     const modal =
         bootstrap.Modal.getInstance(
             modalElement
         );
 
+
     if (modal) {
+
         modal.hide();
+
     }
+
 }
+
 
 /* =========================================================
    AUDIO FEEDBACK
