@@ -1548,19 +1548,13 @@ function showResultModal(
     }
 
     /* ---------------------------------------------------------
-       BULK REGISTRATION SUMMARY
+        REGISTRATION SUMMARY CARD
     --------------------------------------------------------- */
 
-    if (
-        bulkRegistrationInfo &&
-        bulkInfo &&
-        bulkInfo.isBulk === true
-    ) {
-
-        /* Show ONLY the previous working bulk summary. */
+    if (bulkRegistrationInfo) {
+        /* Always show the summary card */
         bulkRegistrationInfo.style.display = "block";
 
-        /* Bulk registrations use the bulk summary school field. */
         if (individualSchool) {
             individualSchool.style.display = "none";
         }
@@ -1569,111 +1563,41 @@ function showResultModal(
             bulkRegistrationInfo.querySelector(".bulk-school .bulk-label");
 
         if (bulkSchoolLabel) {
-            bulkSchoolLabel.textContent = "BULK REGISTRATION";
+            bulkSchoolLabel.textContent = "SCHOOL / ORGANIZATION";
         }
 
-        if (modalSchool) {
-            modalSchool.textContent =
-                bulkInfo.school || "School Not Specified";
-        }
-
-        if (modalHeadcount) {
-            modalHeadcount.textContent =
-                Number(bulkInfo.headcount || 0).toLocaleString();
-        }
-
-        if (modalPaying) {
-            modalPaying.textContent =
-                Number(bulkInfo.payingParticipants || 0).toLocaleString();
-        }
-
-        if (modalFree) {
-            modalFree.textContent =
-                Number(bulkInfo.free || 0).toLocaleString();
-        }
-
-        /* Remove any duplicate generic placeholder outside the bulk box. */
-        const modalContent =
-            modalElement.querySelector(".modal-content");
-
-        if (modalContent) {
-            modalContent.querySelectorAll("*").forEach(element => {
-                if (bulkRegistrationInfo.contains(element)) {
-                    return;
-                }
-
-                const text =
-                    String(element.textContent || "")
-                        .replace(/\s+/g, " ")
-                        .trim()
-                        .toUpperCase();
-
-                if (
-                    text === "SCHOOL / ORGANIZATION" ||
-                    text === "SCHOOL / ORGANIZATION -"
-                ) {
-                    element.style.display = "none";
-                }
-            });
-        }
-
-    }
-
-    else {
-
-        /* Individual registration: display the actual School value from Column F. */
-        if (bulkRegistrationInfo) {
-            bulkRegistrationInfo.style.display = "none";
-        }
-
+        /* Get school name from bulk object, single school param, or attendee record */
         const directoryRecordForSchool =
-            safeId &&
-            safeId !== "NO ATTENDEE ID" &&
-            safeId !== "ATTENDEE"
+            safeId && safeId !== "NO ATTENDEE ID" && safeId !== "ATTENDEE"
                 ? findAttendeeById(safeId)
                 : null;
 
-        const actualSchool =
-            String(
-                school ||
-                (directoryRecordForSchool && directoryRecordForSchool.school) ||
-                ""
-            )
-                .trim();
+        const resolvedSchool =
+            (bulkInfo && bulkInfo.school) ||
+            school ||
+            (directoryRecordForSchool && directoryRecordForSchool.school) ||
+            "Not Specified";
 
-        if (individualSchool) {
-            individualSchool.style.display = actualSchool ? "block" : "none";
+        if (modalSchool) {
+            modalSchool.textContent = resolvedSchool;
         }
 
-        /* The label SCHOOL / ORGANIZATION is obsolete.
-           Only the actual Column F value is shown. */
-        document.getElementById("individualSchoolLabel")?.style.setProperty("display", "none");
-
-        if (individualModalSchool) {
-            individualModalSchool.textContent = actualSchool || "";
-            individualModalSchool.style.display = actualSchool ? "block" : "none";
+        /* Populate summary counts */
+        if (modalHeadcount) {
+            const val = bulkInfo ? bulkInfo.headcount : 0;
+            modalHeadcount.textContent = Number(val || 0).toLocaleString();
         }
 
-        /* Compatibility fallback for older HTML templates. */
-        if (!individualSchool && actualSchool && modalName) {
-            let fallbackSchool =
-                modalElement.querySelector("#fallbackIndividualSchool");
-
-            if (!fallbackSchool) {
-                fallbackSchool = document.createElement("div");
-                fallbackSchool.id = "fallbackIndividualSchool";
-                fallbackSchool.className = "individual-school";
-                fallbackSchool.style.textAlign = "center";
-                fallbackSchool.style.marginTop = "4px";
-                modalName.insertAdjacentElement("afterend", fallbackSchool);
-            }
-
-            fallbackSchool.textContent = actualSchool;
-            fallbackSchool.style.display = "block";
+        if (modalPaying) {
+            const val = bulkInfo ? (bulkInfo.payingParticipants || bulkInfo.paying) : 0;
+            modalPaying.textContent = Number(val || 0).toLocaleString();
         }
 
+        if (modalFree) {
+            const val = bulkInfo ? bulkInfo.free : 0;
+            modalFree.textContent = Number(val || 0).toLocaleString();
+        }
     }
-
 
     /* -----------------------------------------------------
        SHOW MODAL
