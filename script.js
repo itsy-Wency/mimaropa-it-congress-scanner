@@ -68,11 +68,15 @@ function loadAttendeeDirectory() {
 function findAttendeeById(attendeeId) {
     const cleanId = String(attendeeId || "").trim().toUpperCase();
 
-    if (!cleanId || !Array.isArray(attendeeDirectory)) {
+    if (!cleanId || !Array.isArray(attendeeDirectory) || attendeeDirectory.length === 0) {
         return null;
     }
 
-    return attendeeDirectory.find(item => item.id === cleanId) || null;
+    return attendeeDirectory.find(item => {
+        if (!item) return false;
+        const itemId = String(item.id || item.attendeeId || "").trim().toUpperCase();
+        return itemId === cleanId;
+    }) || null;
 }
 
 
@@ -811,7 +815,12 @@ function handleResponse(res) {
      * This prevents the UI from falling back to ATTENDEE when
      * the scan itself was successfully recorded.
      */
-    const directoryRecord = findAttendeeById(attendeeId);
+    let directoryRecord = null;
+    try {
+        directoryRecord = findAttendeeById(attendeeId);
+    } catch (err) {
+        console.warn("Directory lookup error caught:", err);
+    }
 
     const name =
         String(
