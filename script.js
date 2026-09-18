@@ -2081,8 +2081,13 @@ function handleOverrideResponse(
             .trim()
             .toUpperCase();
 
-
-    const directoryRecord = findAttendeeById(attendeeId);
+    // Replace the bare declaration with this safe wrapper:
+    let directoryRecord = null;
+    try {
+        directoryRecord = findAttendeeById(attendeeId);
+    } catch (err) {
+        console.warn("Secondary directory lookup error caught:", err);
+    }
 
     const name =
         String(
