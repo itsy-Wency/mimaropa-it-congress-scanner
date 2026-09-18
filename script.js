@@ -1622,8 +1622,19 @@ function showResultModal(
             bulkRegistrationInfo.style.display = "none";
         }
 
+        const directoryRecordForSchool =
+            safeId &&
+            safeId !== "NO ATTENDEE ID" &&
+            safeId !== "ATTENDEE"
+                ? findAttendeeById(safeId)
+                : null;
+
         const actualSchool =
-            String(school || (directoryRecord && directoryRecord.school) || "")
+            String(
+                school ||
+                (directoryRecordForSchool && directoryRecordForSchool.school) ||
+                ""
+            )
                 .trim();
 
         if (individualSchool) {
