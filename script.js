@@ -1380,79 +1380,38 @@ function showResultModal(
        GET MODAL ELEMENTS
     ----------------------------------------------------- */
 
-    const modalIcon =
-        document.getElementById("modalIcon");
-
-    const modalStatus =
-        document.getElementById("modalStatus");
-
-    const modalName =
-        document.getElementById("modalName");
-
-    const modalId =
-        document.getElementById("modalId");
-
-    const modalTime =
-        document.getElementById("modalTime");
-
-    const modalMessage =
-        document.getElementById("modalMessage");
+    const modalIcon = document.getElementById("modalIcon");
+    const modalStatus = document.getElementById("modalStatus");
+    const modalName = document.getElementById("modalName");
+    const modalId = document.getElementById("modalId");
+    const modalTime = document.getElementById("modalTime");
+    const modalMessage = document.getElementById("modalMessage");
 
     /* Individual school block (used only for individual registrations). */
     const individualSchool =
         document.getElementById("individualSchoolDisplay") ||
         modalElement.querySelector(".individual-school");
 
-    const individualSchoolLabel =
-        document.getElementById("individualSchoolLabel");
-
-    const individualModalSchool =
-        document.getElementById("individualModalSchool");
-
+    const individualSchoolLabel = document.getElementById("individualSchoolLabel");
+    const individualModalSchool = document.getElementById("individualModalSchool");
 
     /* BULK REGISTRATION MODAL ELEMENTS */
-
-    const bulkRegistrationInfo =
-        document.getElementById("bulkRegistrationInfo");
-
-    const modalSchool =
-        document.getElementById("modalSchool");
-
-    const modalHeadcount =
-        document.getElementById("modalHeadcount");
-
-    const modalPaying =
-        document.getElementById("modalPaying");
-
-    const modalFree =
-        document.getElementById("modalFree");
-
+    const bulkRegistrationInfo = document.getElementById("bulkRegistrationInfo");
+    const modalSchool = document.getElementById("modalSchool");
+    const modalHeadcount = document.getElementById("modalHeadcount");
+    const modalPaying = document.getElementById("modalPaying");
+    const modalFree = document.getElementById("modalFree");
 
     /* -----------------------------------------------------
        NORMALIZE DATA
     ----------------------------------------------------- */
 
-    const safeType =
-        String(type || "error").toLowerCase();
-
-    const safeStatus =
-        String(status || "TRY AGAIN");
-
-    const safeName =
-        String(name || "ATTENDEE NOT IDENTIFIED");
-
-    const safeId =
-        String(attendeeId || "NO ATTENDEE ID");
-
-    const safeTimestamp =
-        String(timestamp || getCurrentTimestamp());
-
-    const safeMessage =
-        String(
-            message ||
-            "Please try again."
-        );
-
+    const safeType = String(type || "error").toLowerCase();
+    const safeStatus = String(status || "TRY AGAIN");
+    const safeName = String(name || "ATTENDEE NOT IDENTIFIED");
+    const safeId = String(attendeeId || "NO ATTENDEE ID");
+    const safeTimestamp = String(timestamp || getCurrentTimestamp());
+    const safeMessage = String(message || "Please try again.");
 
     /* -----------------------------------------------------
        RESET MODAL
@@ -1464,87 +1423,60 @@ function showResultModal(
         "modal-error"
     );
 
-
     /* -----------------------------------------------------
        STATUS TYPE
     ----------------------------------------------------- */
 
     if (safeType === "success") {
-
-        modalElement.classList.add(
-            "modal-success"
-        );
+        modalElement.classList.add("modal-success");
 
         if (modalIcon) {
-            modalIcon.innerHTML =
-                '<i class="bi bi-check-lg"></i>';
+            modalIcon.innerHTML = '<i class="bi bi-check-lg"></i>';
         }
 
         if (modalStatus) {
-            modalStatus.textContent =
-                "SCAN SUCCESSFULLY";
+            modalStatus.textContent = "SCAN SUCCESSFULLY";
         }
-
-    }
-
-    else if (safeType === "already") {
-
-        modalElement.classList.add(
-            "modal-already"
-        );
+    } else if (safeType === "already") {
+        modalElement.classList.add("modal-already");
 
         if (modalIcon) {
-            modalIcon.innerHTML =
-                '<i class="bi bi-exclamation-lg"></i>';
+            modalIcon.innerHTML = '<i class="bi bi-exclamation-lg"></i>';
         }
 
         if (modalStatus) {
-            modalStatus.textContent =
-                "ALREADY SCANNED";
+            modalStatus.textContent = "ALREADY SCANNED";
         }
-
-    }
-
-    else {
-
-        modalElement.classList.add(
-            "modal-error"
-        );
+    } else {
+        modalElement.classList.add("modal-error");
 
         if (modalIcon) {
-            modalIcon.innerHTML =
-                '<i class="bi bi-x-lg"></i>';
+            modalIcon.innerHTML = '<i class="bi bi-x-lg"></i>';
         }
 
         if (modalStatus) {
-            modalStatus.textContent =
-                safeStatus;
+            modalStatus.textContent = safeStatus;
         }
     }
-
 
     /* -----------------------------------------------------
        POPULATE ATTENDEE INFORMATION
     ----------------------------------------------------- */
 
     if (modalName) {
-        modalName.textContent =
-            safeName;
+        modalName.textContent = safeName;
     }
 
     if (modalId) {
-        modalId.textContent =
-            safeId;
+        modalId.textContent = safeId;
     }
 
     if (modalTime) {
-        modalTime.textContent =
-            safeTimestamp;
+        modalTime.textContent = safeTimestamp;
     }
 
     if (modalMessage) {
-        modalMessage.textContent =
-            safeMessage;
+        modalMessage.textContent = safeMessage;
     }
 
     /* ---------------------------------------------------------
@@ -1556,11 +1488,9 @@ function showResultModal(
         bulkInfo &&
         bulkInfo.isBulk === true
     ) {
-
-        /* Show ONLY the previous working bulk summary. */
+        /* Show the bulk summary block matching the target image layout. */
         bulkRegistrationInfo.style.display = "block";
 
-        /* Bulk registrations use the bulk summary school field. */
         if (individualSchool) {
             individualSchool.style.display = "none";
         }
@@ -1569,12 +1499,12 @@ function showResultModal(
             bulkRegistrationInfo.querySelector(".bulk-school .bulk-label");
 
         if (bulkSchoolLabel) {
-            bulkSchoolLabel.textContent = "BULK REGISTRATION";
+            /* Matches the reference layout title exactly */
+            bulkSchoolLabel.textContent = "SCHOOL / ORGANIZATION";
         }
 
         if (modalSchool) {
-            modalSchool.textContent =
-                bulkInfo.school || "School Not Specified";
+            modalSchool.textContent = bulkInfo.school || "School Not Specified";
         }
 
         if (modalHeadcount) {
@@ -1591,37 +1521,8 @@ function showResultModal(
             modalFree.textContent =
                 Number(bulkInfo.free || 0).toLocaleString();
         }
-
-        /* Remove any duplicate generic placeholder outside the bulk box. */
-        const modalContent =
-            modalElement.querySelector(".modal-content");
-
-        if (modalContent) {
-            modalContent.querySelectorAll("*").forEach(element => {
-                if (bulkRegistrationInfo.contains(element)) {
-                    return;
-                }
-
-                const text =
-                    String(element.textContent || "")
-                        .replace(/\s+/g, " ")
-                        .trim()
-                        .toUpperCase();
-
-                if (
-                    text === "SCHOOL / ORGANIZATION" ||
-                    text === "SCHOOL / ORGANIZATION -"
-                ) {
-                    element.style.display = "none";
-                }
-            });
-        }
-
-    }
-
-    else {
-
-        /* Individual registration: display the actual School value from Column F. */
+    } else {
+        /* Individual registration fallback */
         if (bulkRegistrationInfo) {
             bulkRegistrationInfo.style.display = "none";
         }
@@ -1638,15 +1539,12 @@ function showResultModal(
                 school ||
                 (directoryRecordForSchool && directoryRecordForSchool.school) ||
                 ""
-            )
-                .trim();
+            ).trim();
 
         if (individualSchool) {
             individualSchool.style.display = actualSchool ? "block" : "none";
         }
 
-        /* The label SCHOOL / ORGANIZATION is obsolete.
-           Only the actual Column F value is shown. */
         document.getElementById("individualSchoolLabel")?.style.setProperty("display", "none");
 
         if (individualModalSchool) {
@@ -1654,7 +1552,6 @@ function showResultModal(
             individualModalSchool.style.display = actualSchool ? "block" : "none";
         }
 
-        /* Compatibility fallback for older HTML templates. */
         if (!individualSchool && actualSchool && modalName) {
             let fallbackSchool =
                 modalElement.querySelector("#fallbackIndividualSchool");
@@ -1671,64 +1568,35 @@ function showResultModal(
             fallbackSchool.textContent = actualSchool;
             fallbackSchool.style.display = "block";
         }
-
     }
-
 
     /* -----------------------------------------------------
        SHOW MODAL
     ----------------------------------------------------- */
 
     try {
-
-        const modal =
-            bootstrap.Modal.getOrCreateInstance(
-                modalElement,
-                {
-                    backdrop: true,
-                    keyboard: true,
-                    focus: true
-                }
-            );
+        const modal = bootstrap.Modal.getOrCreateInstance(
+            modalElement,
+            {
+                backdrop: true,
+                keyboard: true,
+                focus: true
+            }
+        );
 
         modal.show();
 
-        /*
-         * Force the modal to the front.
-         * This is particularly useful on mobile browsers
-         * where scanner/video elements may create stacking
-         * contexts.
-         */
-
         requestAnimationFrame(() => {
-
             modalElement.style.zIndex = "1060";
 
-            const backdrop =
-                document.querySelector(
-                    ".modal-backdrop"
-                );
+            const backdrop = document.querySelector(".modal-backdrop");
 
             if (backdrop) {
                 backdrop.style.zIndex = "1055";
             }
-
         });
-
-    }
-
-    catch (error) {
-
-        console.error(
-            "Unable to display result modal:",
-            error
-        );
-
-        /*
-         * Fallback:
-         * If Bootstrap fails for any reason,
-         * keep the result visible in the main status panel.
-         */
+    } catch (error) {
+        console.error("Unable to display result modal:", error);
 
         updateStatus(
             safeType,
