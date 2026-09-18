@@ -815,18 +815,11 @@ function handleResponse(res) {
      * This prevents the UI from falling back to ATTENDEE when
      * the scan itself was successfully recorded.
      */
-    // Safely resolve attendeeId first to prevent scope crashes
-    const currentAttendeeId = typeof attendeeId !== "undefined" ? attendeeId : (data.attendeeId || "");
+    const safeAttendeeId = (typeof attendeeId !== "undefined" && attendeeId) 
+        ? attendeeId 
+        : (data && (data.attendeeId || data.id)) || "";
 
-    // Foolproof directory lookup that can never crash the script
-    let directoryRecord = null;
-    try {
-        if (typeof findAttendeeById === "function" && currentAttendeeId) {
-            directoryRecord = findAttendeeById(currentAttendeeId);
-        }
-    } catch (err) {
-        console.warn("Safe directory lookup caught an exception:", err);
-    }
+    const directoryRecord = safeAttendeeId ? findAttendeeById(safeAttendeeId) : null;
 
     const name =
         String(
@@ -2087,18 +2080,11 @@ function handleOverrideResponse(
             .trim()
             .toUpperCase();
 
-    // Safely resolve attendeeId first to prevent scope crashes
-    const currentAttendeeId = typeof attendeeId !== "undefined" ? attendeeId : (data.attendeeId || "");
+    const safeAttendeeId = (typeof attendeeId !== "undefined" && attendeeId) 
+        ? attendeeId 
+        : (data && (data.attendeeId || data.id)) || "";
 
-    // Foolproof directory lookup that can never crash the script
-    let directoryRecord = null;
-    try {
-        if (typeof findAttendeeById === "function" && currentAttendeeId) {
-            directoryRecord = findAttendeeById(currentAttendeeId);
-        }
-    } catch (err) {
-        console.warn("Safe directory lookup caught an exception:", err);
-    }
+    const directoryRecord = safeAttendeeId ? findAttendeeById(safeAttendeeId) : null;
 
     const name =
         String(
