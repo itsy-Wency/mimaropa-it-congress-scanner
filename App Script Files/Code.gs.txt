@@ -1,0 +1,3878 @@
+/**
+ * 8th MIMAROPA Regional IT Congress - High-Speed ID-Only Backend
+ */
+
+const EMAIL_HEADER_FILE_ID = "1ouxXQqKRxySPFjAD2etW8Yb6yPU5P9w1";
+const SPREADSHEET_ID = "19SIEZf0TOLABwDyvqcs8UzHYc8HzS8MrU-6TOHkpeLg";
+
+function getSpreadsheet() {
+  let ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  }
+  return ss;
+}
+//old version
+// function doGet(e) {
+//   return HtmlService.createTemplateFromFile('Index')
+//     .evaluate()
+//     .setTitle('8th MIMAROPA Regional IT Congress')
+//     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no')
+//     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+// }
+
+//new version 
+//for two possible request (1)app script url (2)attendee api
+//response = id and name 
+function doGet(e) {
+
+  // API endpoint for attendee list
+  if (e && e.parameter && e.parameter.action === "attendees") {
+    return ContentService
+      .createTextOutput(JSON.stringify(getRegisteredAttendees()))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // Normal web app page
+  return HtmlService
+    .createTemplateFromFile('Index')
+    .evaluate()
+    .setTitle('8th MIMAROPA Regional IT Congress')
+    .addMetaTag(
+      'viewport',
+      'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'
+    )
+    .setXFrameOptionsMode(
+      HtmlService.XFrameOptionsMode.ALLOWALL
+    );
+}
+//modified
+function doPost(e) {
+
+  try {
+
+    const contents = JSON.parse(e.postData.contents);
+
+    // Normal scan
+    if (contents.action === "scan") {
+
+      const result = processScan(
+        contents.attendeeId,
+        contents.session
+      );
+
+      return ContentService
+        .createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+
+    // Manual override
+    if (contents.action === "manualOverride") {
+
+      const result = manualOverride(
+        contents.attendeeId,
+        contents.session,
+        contents.pin
+      );
+
+      return ContentService
+        .createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        status: "ERROR",
+        displayStatus: "Try Again",
+        message: "Invalid action."
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+
+  } catch (err) {
+
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        status: "ERROR",
+        displayStatus: "Try Again",
+        message: "Unable to process the request. Please try again."
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+//expose getRegisteredAttendees() thru web app
+function doGetAttendees() {
+  return ContentService
+    .createTextOutput(JSON.stringify(getRegisteredAttendees()))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * GOOGLE FORM SUBMISSION TRIGGER
+ * Creates attendee record and sends QR email.
+ */
+function onFormSubmit(e) {
+  try {
+
+    let sourceSheet;
+    let row;
+
+    // Normal trigger execution
+    if (e && e.range) {
+      sourceSheet = e.range.getSheet();
+      row = e.range.getRow();
+    }
+
+    // Manual test / fallback
+    else {
+      const ss = getSpreadsheet();
+
+      sourceSheet = ss.getSheetByName("Form Responses 1");
+
+      if (!sourceSheet) {
+        throw new Error('Sheet "Form Responses 1" was not found.');
+      }
+
+      row = sourceSheet.getLastRow();
+    }
+
+    const sheetName = sourceSheet.getName();
+
+    console.log("=================================");
+    console.log("FORM SUBMISSION STARTED");
+    console.log("Sheet: " + sheetName);
+    console.log("Row: " + row);
+    console.log("=================================");
+
+    if (sheetName === "Form Responses 1") {
+
+      processIndividualSubmission(sourceSheet, row);
+
+    }
+
+    else if (sheetName === "Form Responses 2") {
+
+      processGroupSubmission(sourceSheet, row);
+
+    }
+
+    else {
+
+      throw new Error(
+        "Unsupported form response sheet: " + sheetName
+      );
+
+    }
+
+    console.log("FORM SUBMISSION COMPLETED SUCCESSFULLY");
+
+  }
+
+  catch (err) {
+
+    console.error(
+      "================================="
+    );
+
+    console.error(
+      "FORM SUBMISSION ERROR"
+    );
+
+    console.error(
+      err.toString()
+    );
+
+    console.error(
+      "================================="
+    );
+
+    // Re-throw so Apps Script records the actual error
+    // instead of silently hiding it.
+    throw err;
+  }
+}
+
+function processIndividualSubmission(sourceSheet, row) {
+  const ss = getSpreadsheet();
+  const targetSheet = ss.getSheetByName("Individual Attendees");
+  if (!targetSheet) return;
+
+  const headers = sourceSheet.getRange(1, 1, 1, sourceSheet.getLastColumn()).getValues()[0];
+  const rowData = sourceSheet.getRange(row, 1, 1, sourceSheet.getLastColumn()).getValues()[0];
+
+  let email = "", firstName = "", lastName = "", contact = "", school = "", certName = "";
+
+  for (let col = 0; col < headers.length; col++) {
+    const h = String(headers[col]).toUpperCase().trim();
+    const val = String(rowData[col] || "").trim();
+
+    if (h.includes("EMAIL") && !email && val.includes("@")) email = val;
+    else if (h.includes("FIRST NAME")) firstName = val.toUpperCase();
+    else if (h.includes("LAST NAME")) lastName = val.toUpperCase();
+    else if (h.includes("CONTACT")) contact = val;
+    else if (h.includes("CERTIFICATE") || h.includes("NAME TO APPEAR")) certName = val.toUpperCase();
+    else if ((h.includes("SCHOOL") || h.includes("INSTITUTION")) && !h.includes("ADDRESS")) school = val.toUpperCase();
+  }
+
+  const fullName = `${firstName} ${lastName}`.trim().toUpperCase() || "ATTENDEE";
+  if (!certName) certName = fullName;
+
+  const surnameClean = (lastName || fullName.split(" ").pop() || "ATTENDEE").replace(/[^A-Z]/gi, '').toUpperCase();
+  const uniqueId = generateIncrementalId(targetSheet, "ATT-IND-" + surnameClean);
+
+  const targetRow = targetSheet.getLastRow() + 1;
+  const qrUrl = "https://quickchart.io/qr?text=" + encodeURIComponent(uniqueId) + "&size=300";
+
+  targetSheet.getRange(targetRow, 1, 1, 12).setValues([[
+    uniqueId, fullName, certName, email, contact, school, "ABSENT", "", "PENDING", "", "PENDING", ""
+  ]]);
+
+  SpreadsheetApp.flush();
+
+  if (email && email.includes("@")) {
+    sendQrEmail(email, fullName, uniqueId, qrUrl, false);
+  }
+}
+
+function processGroupSubmission(sourceSheet, row) {
+  const ss = getSpreadsheet();
+  const targetSheet = ss.getSheetByName("Group_Bulk Attendees");
+  if (!targetSheet) return;
+
+  const headers = sourceSheet.getRange(1, 1, 1, sourceSheet.getLastColumn()).getValues()[0];
+  const rowData = sourceSheet.getRange(row, 1, 1, sourceSheet.getLastColumn()).getValues()[0];
+
+  let email = "", primaryName = "", school = "", contact = "";
+
+  for (let col = 0; col < headers.length; col++) {
+    const h = String(headers[col]).toUpperCase().trim();
+    const val = String(rowData[col] || "").trim();
+
+    if (h.includes("EMAIL") && !email && val.includes("@")) email = val;
+    else if (h.includes("NAME")) primaryName = val.toUpperCase();
+    else if (h.includes("SCHOOL") || h.includes("ORGANIZATION")) school = val.toUpperCase();
+    else if (h.includes("CONTACT")) contact = val;
+  }
+
+  if (!primaryName) primaryName = "GROUP LEAD";
+
+  const nameParts = primaryName.trim().split(" ");
+  const surnameClean = (nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0]).replace(/[^A-Z]/gi, '').toUpperCase() || "GROUP";
+  const uniqueId = generateIncrementalId(targetSheet, "ATT-BLK-" + surnameClean);
+
+  const targetRow = targetSheet.getLastRow() + 1;
+  const qrUrl = "https://quickchart.io/qr?text=" + encodeURIComponent(uniqueId) + "&size=300";
+
+  targetSheet.getRange(targetRow, 1, 1, 13).setValues([[
+    uniqueId, primaryName, primaryName, email, contact, school, "ABSENT", "", "PENDING", "", "PENDING", "", 1
+  ]]);
+
+  SpreadsheetApp.flush();
+  // =====================================================
+// NEW FEATURE: BULK HEADCOUNT + FREE REGISTRATION
+// =====================================================
+
+try {
+
+  // Column D of Form Responses 2 contains
+  // the uploaded Excel file link.
+  const excelFileUrl =
+    sourceSheet.getRange(row, 4).getValue();
+
+  if (excelFileUrl) {
+
+    const bulkStats =
+      calculateBulkRegistration(
+        excelFileUrl
+      );
+
+    // Column M = HEADCOUNT
+    // Column N = FREE
+    targetSheet
+      .getRange(targetRow, 13, 1, 2)
+      .setValues([[
+        bulkStats.headcount,
+        bulkStats.free
+      ]]);
+
+    console.log(
+      "BULK HEADCOUNT UPDATED"
+    );
+
+    console.log(
+      "Group Row: " +
+      targetRow
+    );
+
+    console.log(
+      "HEADCOUNT: " +
+      bulkStats.headcount
+    );
+
+    console.log(
+      "FREE: " +
+      bulkStats.free
+    );
+
+  } else {
+
+    console.log(
+      "No Excel upload found for bulk registration."
+    );
+
+  }
+
+} catch (headcountError) {
+
+  /*
+   * IMPORTANT:
+   *
+   * This feature must NOT break the existing
+   * registration process.
+   *
+   * If headcount calculation fails,
+   * the existing registration, QR generation,
+   * and email process will continue.
+   */
+
+  console.error(
+    "Bulk headcount calculation failed: " +
+    headcountError
+  );
+
+}
+
+  if (email && email.includes("@")) {
+    sendQrEmail(email, primaryName, uniqueId, qrUrl, true);
+  }
+}
+
+function generateIncrementalId(sheet, prefix) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return prefix + "1";
+
+  const data = sheet.getRange("A2:A" + lastRow).getValues();
+  let maxCount = 0;
+
+  for (let i = 0; i < data.length; i++) {
+    const currentId = String(data[i][0]).trim().toUpperCase();
+    if (currentId.startsWith(prefix)) {
+      const numPart = currentId.replace(prefix, "");
+      const num = parseInt(numPart, 10);
+      if (!isNaN(num) && num > maxCount) {
+        maxCount = num;
+      }
+    }
+  }
+  return prefix + (maxCount + 1);
+}
+
+/**
+ * HIGH-SPEED ATTENDEE ID FETCH (COLUMNS A & B ONLY)
+ */
+function getRegisteredAttendees() {
+  const ss = getSpreadsheet();
+  const list = [];
+
+  const indSheet = ss.getSheetByName("Individual Attendees");
+  if (indSheet && indSheet.getLastRow() > 1) {
+    const data = indSheet.getRange(
+      "A2:F" + indSheet.getLastRow()
+    ).getValues();
+    for (let i = 0; i < data.length; i++) {
+      if (data[i][0]) {
+        list.push({
+          id: String(data[i][0]).trim(),
+          name: String(data[i][1]).trim(),
+          school: String(data[i][5] || "").trim()
+        });
+      }
+    }
+  }
+
+  const grpSheet = ss.getSheetByName("Group_Bulk Attendees");
+  if (grpSheet && grpSheet.getLastRow() > 1) {
+    const data = grpSheet.getRange(
+      "A2:F" + grpSheet.getLastRow()
+    ).getValues();
+    for (let i = 0; i < data.length; i++) {
+      if (data[i][0]) {
+        list.push({
+          id: String(data[i][0]).trim(),
+          name: String(data[i][1]).trim(),
+          school: String(data[i][5] || "").trim()
+        });
+      }
+    }
+  }
+
+  return list;
+}
+
+/**
+ * FAST MULTI-DEVICE SCANNER LOOKUP
+ */
+
+//modified
+function processScan(attendeeId, session) {
+
+  const lock = LockService.getScriptLock();
+
+  try {
+
+    lock.waitLock(3000);//important when several scanning devices are operating simultaneously
+
+    const ss = getSpreadsheet();
+
+    const cleanId = String(attendeeId || "")
+      .trim()
+      .toUpperCase();
+
+    const sessionType = String(session || "")
+      .trim()
+      .toUpperCase();
+
+
+    // No ID
+    if (!cleanId) {
+
+      return {
+        status: "INVALID",
+        displayStatus: "Try Again",
+        name: "",
+        attendeeId: "",
+        timestamp: "",
+        message: "No Attendee ID was provided."
+      };
+    }
+
+
+    // Check Individual Attendees
+    let res = checkAndRecordStation(
+      ss.getSheetByName("Individual Attendees"),
+      cleanId,
+      sessionType
+    );
+
+    if (res.found) {
+      return res.result;
+    }
+
+
+    // Check Group Attendees
+// Check Group Attendees
+  const groupSheet =
+    ss.getSheetByName("Group_Bulk Attendees");
+
+  res = checkAndRecordStation(
+    groupSheet,
+    cleanId,
+    sessionType
+  );
+
+  if (res.found) {
+
+    // Additional information for bulk/group registration
+    const bulkInfo =
+      getBulkRegistrationInfo(
+        groupSheet,
+        cleanId
+      );
+
+    return {
+      ...res.result,
+      ...(bulkInfo || {})
+    };
+  }
+
+
+    // Attendee not found
+    return {
+      status: "INVALID",
+      displayStatus: "Try Again",
+      name: "",
+      attendeeId: cleanId,
+      timestamp: "",
+      message: "Attendee ID was not found."
+    };
+
+  } catch (e) {
+
+    return {
+      status: "ERROR",
+      displayStatus: "Try Again",
+      name: "",
+      attendeeId: attendeeId || "",
+      timestamp: "",
+      message: "System is busy. Please scan again."
+    };
+
+  } finally {
+
+    try {
+      lock.releaseLock();
+    } catch (err) {}
+
+  }
+}
+//modified
+function checkAndRecordStation(sheet, targetId, sessionType) {
+
+  if (!sheet || sheet.getLastRow() < 2) {
+    return { found: false };
+  }
+
+  const finder = sheet
+    .getRange("A:A")
+    .createTextFinder(targetId)
+    .matchEntireCell(true)
+    .matchCase(false);
+
+  const cell = finder.findNext();
+
+  if (!cell) {
+    return { found: false };
+  }
+
+  const rowIndex = cell.getRow();
+
+  if (rowIndex < 2) {
+    return { found: false };
+  }
+
+  // A-L structure for BOTH Individual Attendees and Group_Bulk Attendees:
+  // A Attendee ID
+  // B Full Name
+  // C Certificate Name
+  // D Email
+  // E Contact
+  // F School / Organization
+  // G Attendance
+  // H Attendance Time
+  // I AM Snack
+  // J AM Snack Time
+  // K PM Snack
+  // L PM Snack Time
+  const rowData = sheet
+    .getRange(rowIndex, 1, 1, 12)
+    .getDisplayValues()[0];
+
+  const attendeeId = String(rowData[0] || "").trim();
+  const name = String(rowData[1] || "").trim();
+
+  // CRITICAL: School is ALWAYS Column F (index 5).
+  const school = String(rowData[5] || "").trim();
+
+  const attStatus = String(rowData[6] || "")
+    .trim()
+    .toUpperCase();
+  const attTime = String(rowData[7] || "").trim();
+
+  const amStatus = String(rowData[8] || "")
+    .trim()
+    .toUpperCase();
+  const amTime = String(rowData[9] || "").trim();
+
+  const pmStatus = String(rowData[10] || "")
+    .trim()
+    .toUpperCase();
+  const pmTime = String(rowData[11] || "").trim();
+
+  const now = new Date();
+  const timestamp = Utilities.formatDate(
+    now,
+    Session.getScriptTimeZone(),
+    "yyyy-MM-dd hh:mm:ss a"
+  );
+
+  // Helper ensures every response has the same metadata.
+  const buildResult = (status, displayStatus, time, message, attendanceStatus) => ({
+    found: true,
+    result: {
+      status: status,
+      displayStatus: displayStatus,
+      name: name,
+      school: school,
+      attendeeId: attendeeId,
+      timestamp: time || timestamp,
+      attendanceStatus: attendanceStatus || attStatus || "",
+      attendanceTime: attTime,
+      message: message
+    }
+  });
+
+  // =====================================================
+  // ATTENDANCE
+  // =====================================================
+  if (sessionType === "ATTENDANCE") {
+
+    // Already checked in.
+    if (attStatus === "PRESENT") {
+      return buildResult(
+        "ALREADY_SCANNED",
+        "Already Scanned",
+        attTime,
+        "Attendance has already been recorded.",
+        "PRESENT"
+      );
+    }
+
+    // Record attendance.
+    sheet
+      .getRange(rowIndex, 7, 1, 2)
+      .setValues([["PRESENT", now]]);
+
+    SpreadsheetApp.flush();
+
+    return buildResult(
+      "SUCCESS",
+      "Scan Successfully",
+      timestamp,
+      "Attendance recorded successfully.",
+      "PRESENT"
+    );
+  }
+
+  // =====================================================
+  // AM SNACK
+  // =====================================================
+  if (sessionType === "AM_SNACK") {
+
+    if (attStatus !== "PRESENT") {
+      return buildResult(
+        "BLOCKED",
+        "Try Again",
+        timestamp,
+        "Attendee must scan Attendance first.",
+        attStatus || "ABSENT"
+      );
+    }
+
+    if (amStatus === "CLAIMED") {
+      return buildResult(
+        "ALREADY_SCANNED",
+        "Already Scanned",
+        amTime,
+        "AM Snack has already been claimed.",
+        "PRESENT"
+      );
+    }
+
+    sheet
+      .getRange(rowIndex, 9, 1, 2)
+      .setValues([["CLAIMED", now]]);
+
+    SpreadsheetApp.flush();
+
+    return buildResult(
+      "SUCCESS",
+      "Scan Successfully",
+      timestamp,
+      "AM Snack recorded successfully.",
+      "PRESENT"
+    );
+  }
+
+  // =====================================================
+  // PM SNACK
+  // =====================================================
+  if (sessionType === "PM_SNACK") {
+
+    if (attStatus !== "PRESENT") {
+      return buildResult(
+        "BLOCKED",
+        "Try Again",
+        timestamp,
+        "Attendee must scan Attendance first.",
+        attStatus || "ABSENT"
+      );
+    }
+
+    if (amStatus !== "CLAIMED") {
+      return buildResult(
+        "BLOCKED",
+        "Try Again",
+        timestamp,
+        "Attendee must claim AM Snack first.",
+        "PRESENT"
+      );
+    }
+
+    if (pmStatus === "CLAIMED") {
+      return buildResult(
+        "ALREADY_SCANNED",
+        "Already Scanned",
+        pmTime,
+        "PM Snack has already been claimed.",
+        "PRESENT"
+      );
+    }
+
+    sheet
+      .getRange(rowIndex, 11, 1, 2)
+      .setValues([["CLAIMED", now]]);
+
+    SpreadsheetApp.flush();
+
+    return buildResult(
+      "SUCCESS",
+      "Scan Successfully",
+      timestamp,
+      "PM Snack recorded successfully.",
+      "PRESENT"
+    );
+  }
+
+  // =====================================================
+  // INVALID SESSION
+  // =====================================================
+  return buildResult(
+    "ERROR",
+    "Try Again",
+    timestamp,
+    "Invalid station requested.",
+    attStatus
+  );
+}
+
+/**
+ * SEND OFFICIAL QR EVENT PASS
+ */
+function sendQrEmail(
+  recipientEmail,
+  fullName,
+  attendeeId,
+  qrUrl,
+  isGroupLead = false
+) {
+
+  console.log("=================================");
+  console.log("QR EMAIL PROCESS STARTED");
+  console.log("=================================");
+
+  try {
+
+    // --------------------------------------------------
+    // VALIDATE EMAIL
+    // --------------------------------------------------
+
+    recipientEmail = String(recipientEmail || "").trim();
+    fullName = String(fullName || "ATTENDEE").trim();
+    attendeeId = String(attendeeId || "").trim();
+
+    if (!recipientEmail) {
+      throw new Error("Recipient email is empty.");
+    }
+
+    if (!recipientEmail.includes("@")) {
+      throw new Error(
+        "Invalid recipient email: " + recipientEmail
+      );
+    }
+
+    if (!attendeeId) {
+      throw new Error(
+        "Attendee ID is empty."
+      );
+    }
+
+
+    console.log(
+      "Recipient: " + recipientEmail
+    );
+
+    console.log(
+      "Name: " + fullName
+    );
+
+    console.log(
+      "Attendee ID: " + attendeeId
+    );
+
+
+    // --------------------------------------------------
+    // GENERATE QR URL
+    // --------------------------------------------------
+
+    if (!qrUrl) {
+
+      qrUrl =
+        "https://quickchart.io/qr?text=" +
+        encodeURIComponent(attendeeId) +
+        "&size=300";
+
+    }
+
+    console.log(
+      "QR URL: " + qrUrl
+    );
+
+
+    // --------------------------------------------------
+    // DOWNLOAD QR IMAGE
+    // --------------------------------------------------
+
+    const qrResponse = UrlFetchApp.fetch(
+      qrUrl,
+      {
+        method: "get",
+        muteHttpExceptions: true,
+        followRedirects: true
+      }
+    );
+
+    const responseCode =
+      qrResponse.getResponseCode();
+
+    console.log(
+      "QR HTTP Response: " + responseCode
+    );
+
+
+    if (responseCode !== 200) {
+
+      const responseText =
+        qrResponse
+          .getContentText()
+          .substring(0, 500);
+
+      throw new Error(
+        "QR generation failed. HTTP " +
+        responseCode +
+        ". Response: " +
+        responseText
+      );
+
+    }
+
+
+    const qrBlob =
+      qrResponse
+        .getBlob()
+        .setName(
+          "QRCode_" +
+          attendeeId +
+          ".png"
+        );
+
+
+    // --------------------------------------------------
+    // EMAIL SUBJECT
+    // --------------------------------------------------
+
+    const subject =
+      "Your Official Event Pass - 8th MIMAROPA Regional IT Congress";
+
+
+    // --------------------------------------------------
+    // EMAIL BODY
+    // --------------------------------------------------
+
+    const safeName =
+      escapeHtml(fullName);
+
+    const safeId =
+      escapeHtml(attendeeId);
+
+
+    const registrationType =
+      isGroupLead
+        ? "Group Registration"
+        : "Individual Registration";
+
+
+    const htmlBody = `
+
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
+
+<title>8th MIMAROPA Regional IT Congress</title>
+
+</head>
+
+
+<body style="
+    margin:0;
+    padding:0;
+    background:#f1f7f5;
+    font-family:Arial,Helvetica,sans-serif;
+">
+
+<table
+    width="100%"
+    cellpadding="0"
+    cellspacing="0"
+    border="0"
+    style="
+        background:#f1f7f5;
+        padding:30px 12px;
+    "
+>
+
+<tr>
+
+<td align="center">
+
+
+<table
+    width="100%"
+    cellpadding="0"
+    cellspacing="0"
+    border="0"
+    style="
+        max-width:620px;
+        background:#ffffff;
+        border-radius:18px;
+        overflow:hidden;
+        border:1px solid #dce9e4;
+    "
+>
+
+
+<!-- ================================= -->
+<!-- HEADER -->
+<!-- ================================= -->
+
+<tr>
+
+<td
+    style="
+        background:
+        linear-gradient(
+            135deg,
+            #061f2d 0%,
+            #083b48 45%,
+            #0a8f65 100%
+        );
+        padding:28px 24px;
+        text-align:center;
+    "
+>
+
+<div
+    style="
+        color:#ffffff;
+        font-size:12px;
+        font-weight:bold;
+        letter-spacing:2px;
+        margin-bottom:8px;
+    "
+>
+8TH MIMAROPA REGIONAL IT CONGRESS
+</div>
+
+
+<div
+    style="
+        color:#ffffff;
+        font-size:30px;
+        font-weight:900;
+        line-height:1.1;
+    "
+>
+CODE <span style="color:#16e6a5;">GREEN</span> 2026
+</div>
+
+
+<div
+    style="
+        color:#c9e8df;
+        font-size:13px;
+        margin-top:8px;
+    "
+>
+Empowering Sustainable Innovation Through Information Technology
+</div>
+
+</td>
+
+</tr>
+
+
+<!-- ================================= -->
+<!-- CONTENT -->
+<!-- ================================= -->
+
+<tr>
+
+<td
+    style="
+        padding:32px 28px;
+        color:#26383d;
+    "
+>
+
+
+<div
+    style="
+        font-size:13px;
+        color:#16845f;
+        font-weight:bold;
+        letter-spacing:1px;
+        margin-bottom:8px;
+    "
+>
+REGISTRATION CONFIRMED
+</div>
+
+
+<h1
+    style="
+        margin:0 0 18px 0;
+        font-size:26px;
+        color:#102f3b;
+    "
+>
+Your Official Event Pass
+</h1>
+
+
+<p
+    style="
+        font-size:15px;
+        line-height:1.7;
+        margin:0 0 18px 0;
+    "
+>
+Hello <strong>${safeName}</strong>,
+</p>
+
+
+<p
+    style="
+        font-size:14px;
+        line-height:1.7;
+        margin:0 0 24px 0;
+    "
+>
+Your registration for the
+<strong>8th MIMAROPA Regional IT Congress</strong>
+has been successfully confirmed.
+</p>
+
+
+<!-- ================================= -->
+<!-- PASS CARD -->
+<!-- ================================= -->
+
+<table
+    width="100%"
+    cellpadding="0"
+    cellspacing="0"
+    border="0"
+    style="
+        background:#f4faf7;
+        border:1px solid #d7eee5;
+        border-radius:14px;
+        padding:22px;
+    "
+>
+
+<tr>
+
+<td align="center">
+
+
+<div
+    style="
+        color:#0d6f4d;
+        font-size:12px;
+        font-weight:bold;
+        letter-spacing:1px;
+        margin-bottom:8px;
+    "
+>
+ATTENDEE PASS
+</div>
+
+
+<div
+    style="
+        color:#132f38;
+        font-size:20px;
+        font-weight:bold;
+        margin-bottom:18px;
+    "
+>
+${safeId}
+</div>
+
+
+<!-- QR CODE -->
+
+<div
+    style="
+        background:#ffffff;
+        border-radius:12px;
+        padding:15px;
+        display:inline-block;
+        border:1px solid #dfece7;
+    "
+>
+
+<img
+    src="cid:qrImage"
+    alt="Attendee QR Code"
+    width="250"
+    height="250"
+    style="
+        display:block;
+        width:250px;
+        height:250px;
+        max-width:100%;
+    "
+>
+
+</div>
+
+
+<div
+    style="
+        color:#50666d;
+        font-size:12px;
+        margin-top:15px;
+    "
+>
+Attendee ID
+</div>
+
+
+<div
+    style="
+        color:#102f3b;
+        font-size:14px;
+        font-weight:bold;
+        margin-top:4px;
+    "
+>
+${safeId}
+</div>
+
+
+</td>
+
+</tr>
+
+</table>
+
+
+<!-- ================================= -->
+<!-- INSTRUCTIONS -->
+<!-- ================================= -->
+
+<table
+    width="100%"
+    cellpadding="0"
+    cellspacing="0"
+    border="0"
+    style="
+        margin-top:24px;
+        background:#eef8f5;
+        border-left:4px solid #12b981;
+        border-radius:8px;
+    "
+>
+
+<tr>
+
+<td
+    style="
+        padding:15px 17px;
+        color:#36535a;
+        font-size:13px;
+        line-height:1.7;
+    "
+>
+
+<strong
+    style="color:#0c6e4d;"
+>
+Important:
+</strong>
+
+Please keep this QR code accessible during the event.
+You may present it using your mobile device or a printed copy
+when checking in.
+
+</td>
+
+</tr>
+
+</table>
+
+
+<!-- ================================= -->
+<!-- REGISTRATION INFO -->
+<!-- ================================= -->
+
+<p
+    style="
+        margin:25px 0 5px 0;
+        color:#74878c;
+        font-size:11px;
+        text-transform:uppercase;
+        letter-spacing:1px;
+    "
+>
+Registration Type
+</p>
+
+
+<p
+    style="
+        margin:0;
+        color:#263f46;
+        font-size:14px;
+        font-weight:bold;
+    "
+>
+${registrationType}
+</p>
+
+
+<p
+    style="
+        margin-top:28px;
+        margin-bottom:0;
+        color:#536970;
+        font-size:13px;
+        line-height:1.7;
+    "
+>
+Thank you for being part of the
+<strong>8th MIMAROPA Regional IT Congress</strong>.
+We look forward to seeing you at the event.
+</p>
+
+
+</td>
+
+</tr>
+
+
+<!-- ================================= -->
+<!-- FOOTER -->
+<!-- ================================= -->
+
+<tr>
+
+<td
+    style="
+        background:#071f2b;
+        padding:20px;
+        text-align:center;
+    "
+>
+
+<div
+    style="
+        color:#ffffff;
+        font-size:12px;
+        font-weight:bold;
+    "
+>
+8th MIMAROPA Regional IT Congress
+</div>
+
+
+<div
+    style="
+        color:#83a5ad;
+        font-size:11px;
+        margin-top:6px;
+    "
+>
+CODE GREEN 2026
+</div>
+
+
+</td>
+
+</tr>
+
+
+</table>
+
+
+</td>
+
+</tr>
+
+</table>
+
+</body>
+
+</html>
+
+`;
+
+
+    // --------------------------------------------------
+    // SEND EMAIL
+    // --------------------------------------------------
+
+    MailApp.sendEmail({
+
+      to: recipientEmail,
+
+      subject: subject,
+
+      htmlBody: htmlBody,
+
+      body:
+        "Hello " + fullName + ",\n\n" +
+        "Your registration for the 8th MIMAROPA Regional IT Congress has been confirmed.\n\n" +
+        "Attendee ID: " + attendeeId + "\n\n" +
+        "Please present the attached QR code during the event.\n\n" +
+        "Thank you.",
+
+      inlineImages: {
+
+        qrImage: qrBlob
+
+      },
+
+      attachments: [
+
+        qrBlob
+
+      ]
+
+    });
+
+
+    console.log(
+      "================================="
+    );
+
+    console.log(
+      "QR EMAIL SENT SUCCESSFULLY"
+    );
+
+    console.log(
+      "To: " + recipientEmail
+    );
+
+    console.log(
+      "Attendee ID: " + attendeeId
+    );
+
+    console.log(
+      "================================="
+    );
+
+
+    return true;
+
+  }
+
+
+  catch (err) {
+
+    console.error(
+      "================================="
+    );
+
+    console.error(
+      "QR EMAIL FAILED"
+    );
+
+    console.error(
+      "Recipient: " + recipientEmail
+    );
+
+    console.error(
+      "Attendee ID: " + attendeeId
+    );
+
+    console.error(
+      err.toString()
+    );
+
+    console.error(
+      "================================="
+    );
+
+    throw err;
+
+  }
+
+}
+
+
+/**
+ * Prevent HTML injection in email content.
+ */
+function escapeHtml(value) {
+
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+}
+
+
+/**
+ * HTML ESCAPING HELPER
+ *
+ * Prevents attendee names/IDs containing special
+ * characters from breaking the email HTML.
+ */
+function escapeHtml(value) {
+
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+//manual override
+const MANUAL_OVERRIDE_PIN = "Meowmeow123";
+function manualOverride(attendeeId, session, pin) {
+
+
+  // VERIFY PIN
+  
+
+  if (String(pin || "") !== MANUAL_OVERRIDE_PIN) {
+
+    return {
+      status: "INVALID_PIN",
+      displayStatus: "Try Again",
+      name: "",
+      attendeeId: attendeeId || "",
+      timestamp: "",
+      message: "Invalid override PIN."
+    };
+  }
+
+
+  const lock = LockService.getScriptLock();
+
+  try {
+
+    lock.waitLock(3000);
+
+    const ss = getSpreadsheet();
+
+    const cleanId = String(attendeeId || "")
+      .trim()
+      .toUpperCase();
+
+    const sessionType = String(session || "")
+      .trim()
+      .toUpperCase();
+
+
+    // Search Individual Attendees
+    let result = manualOverrideOnSheet(
+      ss.getSheetByName("Individual Attendees"),
+      cleanId,
+      sessionType
+    );
+
+    if (result.found) {
+      return result.result;
+    }
+
+
+    // Search Group Attendees
+    result = manualOverrideOnSheet(
+      ss.getSheetByName("Group_Bulk Attendees"),
+      cleanId,
+      sessionType
+    );
+
+    if (result.found) {
+      return result.result;
+    }
+
+
+    return {
+      status: "INVALID",
+      displayStatus: "Try Again",
+      name: "",
+      attendeeId: cleanId,
+      timestamp: "",
+      message: "Attendee ID was not found."
+    };
+
+  } catch (e) {
+
+    return {
+      status: "ERROR",
+      displayStatus: "Try Again",
+      name: "",
+      attendeeId: cleanId,
+      timestamp: "",
+      message: "Manual override failed."
+    };
+
+  } finally {
+
+    try {
+      lock.releaseLock();
+    } catch (err) {}
+
+  }
+}
+//for manual override
+function manualOverrideOnSheet(sheet, targetId, sessionType) {
+
+  if (!sheet || sheet.getLastRow() < 2) {
+    return { found: false };
+  }
+
+
+  const finder = sheet
+    .getRange("A:A")
+    .createTextFinder(targetId)
+    .matchEntireCell(true)
+    .matchCase(false);
+
+  const cell = finder.findNext();
+
+  if (!cell) {
+    return { found: false };
+  }
+
+
+  const rowIndex = cell.getRow();
+
+  if (rowIndex < 2) {
+    return { found: false };
+  }
+
+
+  const rowData = sheet
+    .getRange(rowIndex, 1, 1, 12)
+    .getValues()[0];
+
+
+  const attendeeId = String(rowData[0] || "").trim();
+  const name = String(rowData[1] || "").trim();
+  const school = String(rowData[5] || "").trim();
+
+  const attStatus = String(rowData[6] || "").toUpperCase();
+  const attTime = String(rowData[7] || "");
+
+  const amStatus = String(rowData[8] || "").toUpperCase();
+  const amTime = String(rowData[9] || "");
+
+  const pmStatus = String(rowData[10] || "").toUpperCase();
+  const pmTime = String(rowData[11] || "");
+
+
+  const timestamp = Utilities.formatDate(
+    new Date(),
+    Session.getScriptTimeZone(),
+    "yyyy-MM-dd hh:mm:ss a"
+  );
+
+
+
+  // ATTENDANCE
+  
+  if (sessionType === "ATTENDANCE") {
+
+    if (attStatus === "PRESENT") {
+
+      return {
+        found: true,
+        result: {
+          status: "ALREADY_SCANNED",
+          displayStatus: "Already Scanned",
+          name: name,
+          school: school,
+          attendeeId: attendeeId,
+          timestamp: attTime,
+          message: "Attendance has already been recorded."
+        }
+      };
+    }
+
+    sheet
+      .getRange(rowIndex, 7, 1, 2)
+      .setValues([["PRESENT", timestamp]]);
+
+    return {
+      found: true,
+      result: {
+        status: "SUCCESS",
+        displayStatus: "Scan Successfully",
+        name: name,
+        school: school,
+        attendeeId: attendeeId,
+        timestamp: timestamp,
+        message: "Attendance recorded using manual override."
+      }
+    };
+  }
+
+
+  // AM SNACK
+
+
+  if (sessionType === "AM_SNACK") {
+
+    if (amStatus === "CLAIMED") {
+
+      return {
+        found: true,
+        result: {
+          status: "ALREADY_SCANNED",
+          displayStatus: "Already Scanned",
+          name: name,
+          school: school,
+          attendeeId: attendeeId,
+          timestamp: amTime,
+          message: "AM Snack has already been claimed."
+        }
+      };
+    }
+
+    sheet
+      .getRange(rowIndex, 9, 1, 2)
+      .setValues([["CLAIMED", timestamp]]);
+
+    return {
+      found: true,
+      result: {
+        status: "SUCCESS",
+        displayStatus: "Scan Successfully",
+        name: name,
+        school: school,
+        attendeeId: attendeeId,
+        timestamp: timestamp,
+        message: "AM Snack recorded using manual override."
+      }
+    };
+  }
+
+
+  // PM SNACK
+ 
+
+  if (sessionType === "PM_SNACK") {
+
+    if (pmStatus === "CLAIMED") {
+
+      return {
+        found: true,
+        result: {
+          status: "ALREADY_SCANNED",
+          displayStatus: "Already Scanned",
+          name: name,
+          school: school,
+          attendeeId: attendeeId,
+          timestamp: pmTime,
+          message: "PM Snack has already been claimed."
+        }
+      };
+    }
+
+    sheet
+      .getRange(rowIndex, 11, 1, 2)
+      .setValues([["CLAIMED", timestamp]]);
+
+    return {
+      found: true,
+      result: {
+        status: "SUCCESS",
+        displayStatus: "Scan Successfully",
+        name: name,
+        school: school,
+        attendeeId: attendeeId,
+        timestamp: timestamp,
+        message: "PM Snack recorded using manual override."
+      }
+    };
+  }
+
+
+  return {
+    found: true,
+    result: {
+      status: "ERROR",
+      displayStatus: "Try Again",
+      name: name,
+      attendeeId: attendeeId,
+      timestamp: timestamp,
+      message: "Invalid station."
+    }
+  };
+}
+
+
+//helper function
+function include(filename) {
+  return HtmlService
+    .createHtmlOutputFromFile(filename)
+    .getContent();
+}
+// for bulk head count feature
+function include(filename) {
+  return HtmlService
+    .createHtmlOutputFromFile(filename)
+    .getContent();
+}
+
+
+/**
+ * ==========================================================
+ * NEW FEATURE:
+ * BULK REGISTRATION HEADCOUNT CALCULATOR
+ * ==========================================================
+ *
+ * This function ONLY reads the uploaded Excel file.
+ *
+ * It does NOT:
+ * - create attendee IDs
+ * - modify attendance
+ * - modify snacks
+ * - send emails
+ * - modify existing attendee records
+ *
+ * Excel structure:
+ * Rows 1-4 = Header / instructions
+ * Row 5+   = Participant records
+ */
+function calculateBulkRegistration(fileUrl) {
+
+  const HEADER_ROWS = 4;
+
+  // --------------------------------------------------------
+  // 1. Extract Drive File ID from uploaded file URL
+  // --------------------------------------------------------
+
+  const fileIdMatch = String(fileUrl)
+    .match(/[-\w]{25,}/);
+
+  if (!fileIdMatch) {
+    throw new Error(
+      "Unable to extract the Excel file ID from the uploaded file link."
+    );
+  }
+
+  const fileId = fileIdMatch[0];
+
+
+  // --------------------------------------------------------
+  // 2. Get uploaded Excel file
+  // --------------------------------------------------------
+
+  const file = DriveApp.getFileById(fileId);
+  const blob = file.getBlob();
+
+
+  // --------------------------------------------------------
+  // 3. Temporarily convert Excel to Google Sheets
+  // --------------------------------------------------------
+
+  const tempFile = Drive.Files.create(
+    {
+      name: "TEMP_BULK_HEADCOUNT_" + new Date().getTime(),
+      mimeType: MimeType.GOOGLE_SHEETS
+    },
+    blob
+  );
+
+
+  try {
+
+    // ------------------------------------------------------
+    // 4. Open converted spreadsheet
+    // ------------------------------------------------------
+
+    const tempSpreadsheet =
+      SpreadsheetApp.openById(tempFile.id);
+
+
+    // ------------------------------------------------------
+    // 5. Open Masterlist sheet
+    // ------------------------------------------------------
+
+    const sheet =
+      tempSpreadsheet.getSheetByName("Masterlist");
+
+    if (!sheet) {
+      throw new Error(
+        'The uploaded Excel file does not contain a "Masterlist" sheet.'
+      );
+    }
+
+
+    // ------------------------------------------------------
+    // 6. Determine actual used range
+    // ------------------------------------------------------
+
+    const lastRow = sheet.getLastRow();
+    const lastColumn = sheet.getLastColumn();
+
+
+    // ------------------------------------------------------
+    // 7. No participant data
+    // ------------------------------------------------------
+
+    if (lastRow <= HEADER_ROWS) {
+
+      return {
+        headcount: 0,
+        free: 0
+      };
+
+    }
+
+
+    // ------------------------------------------------------
+    // 8. Read ONLY Row 5 onward
+    // ------------------------------------------------------
+
+    const participantData =
+      sheet.getRange(
+        HEADER_ROWS + 1,
+        1,
+        lastRow - HEADER_ROWS,
+        lastColumn
+      ).getValues();
+
+
+    // ------------------------------------------------------
+    // 9. Count actual participant rows
+    // ------------------------------------------------------
+
+    let headcount = 0;
+
+    participantData.forEach(function(row) {
+
+      /*
+       * Based on your Excel template:
+       *
+       * Column A = FIRST NAME
+       * Column B = LAST NAME
+       * Column C = MIDDLE INITIAL
+       * Column D = ACTIVE EMAIL ADDRESS
+       */
+
+      const firstName =
+        String(row[0] || "").trim();
+
+      const lastName =
+        String(row[1] || "").trim();
+
+      const email =
+        String(row[3] || "").trim();
+
+
+      /*
+       * A row is considered a participant
+       * when it contains participant information.
+       */
+
+      if (
+        firstName ||
+        lastName ||
+        email
+      ) {
+        headcount++;
+      }
+
+    });
+
+
+    // ------------------------------------------------------
+    // 10. Calculate free registrations
+    // ------------------------------------------------------
+
+    const free =
+      Math.floor(headcount / 30);
+
+
+    // ------------------------------------------------------
+    // 11. Return result
+    // ------------------------------------------------------
+
+    return {
+      headcount: headcount,
+      free: free
+    };
+
+
+  } finally {
+
+    // ------------------------------------------------------
+    // 12. Delete temporary converted spreadsheet
+    // ------------------------------------------------------
+
+    try {
+
+      Drive.Files.remove(tempFile.id);
+
+    } catch (cleanupError) {
+
+      console.log(
+        "Temporary file cleanup failed: " +
+        cleanupError
+      );
+
+    }
+
+  }
+
+}
+/**
+ * ==========================================================
+ * TEST ONLY
+ * ==========================================================
+ *
+ * Reads the latest submission from Form Responses 2,
+ * gets the Excel link from Column D,
+ * calculates HEADCOUNT and FREE,
+ * and writes NOTHING to the spreadsheet.
+ *
+ * This is safe to run during testing.
+ */
+function testBulkHeadcount() {
+
+  const ss = getSpreadsheet();
+
+  const sourceSheet =
+    ss.getSheetByName("Form Responses 2");
+
+  if (!sourceSheet) {
+    throw new Error(
+      'Sheet "Form Responses 2" was not found.'
+    );
+  }
+
+
+  // Get latest response row
+  const lastRow =
+    sourceSheet.getLastRow();
+
+  if (lastRow < 2) {
+    throw new Error(
+      "There are no form submissions to test."
+    );
+  }
+
+
+  // --------------------------------------------------------
+  // Column D = uploaded Excel file
+  // --------------------------------------------------------
+
+  const excelFileUrl =
+    sourceSheet
+      .getRange(lastRow, 4)
+      .getValue();
+
+
+  if (!excelFileUrl) {
+    throw new Error(
+      "Column D of the latest Form Responses 2 submission is empty."
+    );
+  }
+
+
+  console.log(
+    "========================================"
+  );
+
+  console.log(
+    "BULK HEADCOUNT TEST"
+  );
+
+  console.log(
+    "Form Response Row: " + lastRow
+  );
+
+  console.log(
+    "Excel URL: " + excelFileUrl
+  );
+
+
+  // --------------------------------------------------------
+  // Calculate
+  // --------------------------------------------------------
+
+  const result =
+    calculateBulkRegistration(
+      excelFileUrl
+    );
+
+
+  // --------------------------------------------------------
+  // Display result in Execution Log
+  // --------------------------------------------------------
+
+  console.log(
+    "HEADCOUNT: " +
+    result.headcount
+  );
+
+  console.log(
+    "FREE: " +
+    result.free
+  );
+
+  console.log(
+    "========================================"
+  );
+
+
+  return result;
+
+}
+
+/**
+ * ==========================================================
+ * ONE-TIME BACKFILL
+ * ==========================================================
+ *
+ * Updates existing Group_Bulk Attendees records.
+ *
+ * ONLY updates:
+ * M = HEADCOUNT
+ * N = FREE
+ *
+ * It does NOT modify:
+ * - Attendee ID
+ * - Name
+ * - Email
+ * - Attendance
+ * - AM Snack
+ * - PM Snack
+ * - QR
+ * - Email
+ */
+function backfillBulkHeadcount() {
+
+  const ss = getSpreadsheet();
+
+  const responseSheet =
+    ss.getSheetByName("Form Responses 2");
+
+  const groupSheet =
+    ss.getSheetByName("Group_Bulk Attendees");
+
+
+  if (!responseSheet) {
+    throw new Error(
+      'Sheet "Form Responses 2" was not found.'
+    );
+  }
+
+  if (!groupSheet) {
+    throw new Error(
+      'Sheet "Group_Bulk Attendees" was not found.'
+    );
+  }
+
+
+  // ========================================================
+  // GET FORM RESPONSES
+  // ========================================================
+
+  const responseLastRow =
+    responseSheet.getLastRow();
+
+
+  if (responseLastRow < 2) {
+
+    console.log(
+      "No Form Responses 2 records found."
+    );
+
+    return;
+
+  }
+
+
+  /*
+   * Form Responses 2:
+   *
+   * B = Email Address
+   * D = Uploaded Excel
+   */
+
+  const responseData =
+    responseSheet
+      .getRange(
+        2,
+        1,
+        responseLastRow - 1,
+        responseSheet.getLastColumn()
+      )
+      .getValues();
+
+
+  // ========================================================
+  // GET GROUP ATTENDEES
+  // ========================================================
+
+  const groupLastRow =
+    groupSheet.getLastRow();
+
+
+  if (groupLastRow < 2) {
+
+    console.log(
+      "No Group_Bulk Attendees records found."
+    );
+
+    return;
+
+  }
+
+
+  /*
+   * Group_Bulk Attendees:
+   *
+   * D = Email
+   * M = HEADCOUNT
+   * N = FREE
+   */
+
+  const groupData =
+    groupSheet
+      .getRange(
+        2,
+        1,
+        groupLastRow - 1,
+        14
+      )
+      .getValues();
+
+
+  let updatedCount = 0;
+
+
+  // ========================================================
+  // PROCESS EACH GROUP RECORD
+  // ========================================================
+
+  groupData.forEach(
+    function(groupRowData, index) {
+
+      const sheetRow =
+        index + 2;
+
+
+      // Group attendee email = Column D
+      const groupEmail =
+        String(
+          groupRowData[3] || ""
+        )
+          .trim()
+          .toLowerCase();
+
+
+      if (!groupEmail) {
+
+        console.log(
+          "Row " +
+          sheetRow +
+          ": No email found. Skipping."
+        );
+
+        return;
+
+      }
+
+
+      // ====================================================
+      // FIND MATCHING FORM RESPONSE
+      // ====================================================
+
+      let matchingResponse = null;
+
+
+      for (
+        let i = 0;
+        i < responseData.length;
+        i++
+      ) {
+
+        const responseEmail =
+          String(
+            responseData[i][1] || ""
+          )
+            .trim()
+            .toLowerCase();
+
+
+        if (
+          responseEmail === groupEmail
+        ) {
+
+          matchingResponse =
+            responseData[i];
+
+          break;
+
+        }
+
+      }
+
+
+      if (!matchingResponse) {
+
+        console.log(
+          "Row " +
+          sheetRow +
+          ": No matching form response found for " +
+          groupEmail
+        );
+
+        return;
+
+      }
+
+
+      // ====================================================
+      // COLUMN D OF FORM RESPONSES 2
+      // ====================================================
+
+      const excelFileUrl =
+        String(
+          matchingResponse[3] || ""
+        )
+          .trim();
+
+
+      if (!excelFileUrl) {
+
+        console.log(
+          "Row " +
+          sheetRow +
+          ": No Excel file found."
+        );
+
+        return;
+
+      }
+
+
+      // ====================================================
+      // CALCULATE HEADCOUNT
+      // ====================================================
+
+      try {
+
+        const result =
+          calculateBulkRegistration(
+            excelFileUrl
+          );
+
+
+        // ==================================================
+        // WRITE ONLY M AND N
+        // ==================================================
+
+        groupSheet
+          .getRange(
+            sheetRow,
+            13,
+            1,
+            2
+          )
+          .setValues([[
+            result.headcount,
+            result.free
+          ]]);
+
+
+        console.log(
+          "UPDATED GROUP ROW " +
+          sheetRow +
+          " | " +
+          groupEmail +
+          " | HEADCOUNT: " +
+          result.headcount +
+          " | FREE: " +
+          result.free
+        );
+
+
+        updatedCount++;
+
+
+      } catch (error) {
+
+        console.log(
+          "FAILED GROUP ROW " +
+          sheetRow +
+          " | " +
+          groupEmail +
+          " | " +
+          error
+        );
+
+      }
+
+    }
+  );
+
+
+  SpreadsheetApp.flush();
+
+
+  console.log(
+    "========================================"
+  );
+
+  console.log(
+    "BACKFILL COMPLETE"
+  );
+
+  console.log(
+    "Records updated: " +
+    updatedCount
+  );
+
+  console.log(
+    "========================================"
+  );
+
+}
+
+/**
+ * ==========================================================
+ * NEW FEATURE:
+ * IDENTIFY FREE PARTICIPANTS
+ * ==========================================================
+ *
+ * This function ONLY reads the uploaded Excel file.
+ *
+ * It does NOT:
+ * - modify Group_Bulk Attendees
+ * - modify Individual Attendees
+ * - create QR codes
+ * - send emails
+ * - modify attendance
+ * - modify snack status
+ *
+ * Participant data starts at Excel Row 5.
+ *
+ * Free participant positions:
+ * 31, 62, 93, 124, ...
+ */
+function identifyBulkFreeParticipants(fileUrl) {
+
+  const HEADER_ROWS = 4;
+  const FREE_INTERVAL = 30;
+  const FREE_OFFSET = 1;
+
+
+  // ========================================================
+  // 1. EXTRACT DRIVE FILE ID
+  // ========================================================
+
+  const fileIdMatch =
+    String(fileUrl)
+      .match(/[-\w]{25,}/);
+
+  if (!fileIdMatch) {
+    throw new Error(
+      "Unable to extract the Excel file ID from the uploaded file link."
+    );
+  }
+
+  const fileId =
+    fileIdMatch[0];
+
+
+  // ========================================================
+  // 2. GET EXCEL FILE
+  // ========================================================
+
+  const file =
+    DriveApp.getFileById(fileId);
+
+  const blob =
+    file.getBlob();
+
+
+  // ========================================================
+  // 3. TEMPORARILY CONVERT EXCEL
+  // ========================================================
+
+  const tempFile =
+    Drive.Files.create(
+      {
+        name:
+          "TEMP_BULK_FREE_" +
+          new Date().getTime(),
+
+        mimeType:
+          MimeType.GOOGLE_SHEETS
+      },
+      blob
+    );
+
+
+  try {
+
+    // ======================================================
+    // 4. OPEN CONVERTED FILE
+    // ======================================================
+
+    const tempSpreadsheet =
+      SpreadsheetApp.openById(
+        tempFile.id
+      );
+
+
+    // ======================================================
+    // 5. FIND MASTERLIST
+    // ======================================================
+
+    const sheets =
+      tempSpreadsheet.getSheets();
+
+    let sheet =
+      tempSpreadsheet.getSheetByName(
+        "Masterlist"
+      );
+
+
+    // Fallback to first worksheet
+    if (!sheet) {
+      sheet = sheets[0];
+    }
+
+
+    if (!sheet) {
+      throw new Error(
+        "No worksheet was found in the uploaded Excel file."
+      );
+    }
+
+
+    // ======================================================
+    // 6. GET DATA
+    // ======================================================
+
+    const lastRow =
+      sheet.getLastRow();
+
+    const lastColumn =
+      sheet.getLastColumn();
+
+
+    if (lastRow <= HEADER_ROWS) {
+
+      return {
+        headcount: 0,
+        free: 0,
+        freeParticipants: []
+      };
+
+    }
+
+
+    // ======================================================
+    // 7. READ PARTICIPANTS FROM ROW 5
+    // ======================================================
+
+    const participantData =
+      sheet.getRange(
+        HEADER_ROWS + 1,
+        1,
+        lastRow - HEADER_ROWS,
+        lastColumn
+      ).getValues();
+
+
+    // ======================================================
+    // 8. BUILD PARTICIPANT LIST
+    // ======================================================
+
+    const participants = [];
+
+
+    participantData.forEach(
+      function(row, index) {
+
+        const firstName =
+          String(row[0] || "")
+            .trim();
+
+        const lastName =
+          String(row[1] || "")
+            .trim();
+
+        const middleInitial =
+          String(row[2] || "")
+            .trim();
+
+        const email =
+          String(row[3] || "")
+            .trim();
+
+        /*
+         * Only count actual participant rows.
+         */
+
+        if (
+          firstName ||
+          lastName ||
+          email
+        ) {
+
+          const participantNumber =
+            participants.length + 1;
+
+          const excelRow =
+            HEADER_ROWS + 1 + index;
+
+
+          participants.push({
+
+            number:
+              participantNumber,
+
+            excelRow:
+              excelRow,
+
+            firstName:
+              firstName,
+
+            lastName:
+              lastName,
+
+            middleInitial:
+              middleInitial,
+
+            email:
+              email,
+
+            name:
+              [
+                firstName,
+                middleInitial,
+                lastName
+              ]
+                .filter(Boolean)
+                .join(" ")
+                .trim()
+
+          });
+
+        }
+
+      }
+    );
+
+
+    // ======================================================
+    // 9. CALCULATE HEADCOUNT
+    // ======================================================
+
+    const headcount =
+      participants.length;
+
+
+    // ======================================================
+    // 10. CALCULATE FREE COUNT
+    // ======================================================
+
+    const free =
+      Math.floor(
+        headcount / FREE_INTERVAL
+      );
+
+
+    // ======================================================
+    // 11. IDENTIFY FREE PARTICIPANTS
+    // ======================================================
+
+    const freeParticipants = [];
+
+
+    /*
+     * Free positions:
+     *
+     * 31
+     * 62
+     * 93
+     * 124
+     * ...
+     *
+     * Formula:
+     *
+     * (30 × 1) + 1 = 31
+     * (30 × 2) + 2 = 62
+     * (30 × 3) + 3 = 93
+     *
+     * Equivalent:
+     *
+     * participantNumber = 31 + (n × 31)
+     */
+
+    for (
+      let i = 1;
+      i <= free;
+      i++
+    ) {
+
+      const freeParticipantNumber =
+        (FREE_INTERVAL * i) + i;
+
+
+      const participant =
+        participants.find(
+          function(p) {
+            return p.number === freeParticipantNumber;
+          }
+        );
+
+
+      /*
+       * Only identify the participant if
+       * that participant actually exists.
+       */
+      if (participant) {
+
+        freeParticipants.push(
+          participant
+        );
+
+      }
+
+    }
+
+
+    // ======================================================
+    // 12. LOG RESULTS
+    // ======================================================
+
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "FREE PARTICIPANT IDENTIFICATION"
+    );
+
+    console.log(
+      "HEADCOUNT: " +
+      headcount
+    );
+
+    console.log(
+      "FREE COUNT: " +
+      free
+    );
+
+
+    freeParticipants.forEach(
+      function(participant) {
+
+        console.log(
+          "FREE #" +
+          participant.number +
+          " | " +
+          participant.name +
+          " | Excel Row " +
+          participant.excelRow +
+          " | " +
+          participant.email
+        );
+
+      }
+    );
+
+
+    console.log(
+      "========================================"
+    );
+
+
+    // ======================================================
+    // 13. RETURN RESULTS
+    // ======================================================
+
+    return {
+
+      headcount:
+        headcount,
+
+      free:
+        free,
+
+      freeParticipants:
+        freeParticipants
+
+    };
+
+
+  } finally {
+
+    // ======================================================
+    // 14. DELETE TEMPORARY FILE
+    // ======================================================
+
+    try {
+
+      Drive.Files.remove(
+        tempFile.id
+      );
+
+    } catch (cleanupError) {
+
+      console.log(
+        "Temporary file cleanup failed: " +
+        cleanupError
+      );
+
+    }
+
+  }
+
+}
+
+/**
+ * ==========================================================
+ * TEST FREE PARTICIPANT IDENTIFICATION
+ * ==========================================================
+ *
+ * This does NOT modify any Google Sheet.
+ */
+function testBulkFreeParticipants() {
+
+  const ss =
+    getSpreadsheet();
+
+  const sourceSheet =
+    ss.getSheetByName(
+      "Form Responses 2"
+    );
+
+
+  if (!sourceSheet) {
+    throw new Error(
+      'Sheet "Form Responses 2" was not found.'
+    );
+  }
+
+
+  const lastRow =
+    sourceSheet.getLastRow();
+
+
+  if (lastRow < 2) {
+    throw new Error(
+      "No bulk registration submissions found."
+    );
+  }
+
+
+  // Column D = uploaded Excel
+  const excelFileUrl =
+    sourceSheet
+      .getRange(
+        lastRow,
+        4
+      )
+      .getValue();
+
+
+  if (!excelFileUrl) {
+    throw new Error(
+      "The latest bulk registration has no Excel file."
+    );
+  }
+
+
+  console.log(
+    "========================================"
+  );
+
+  console.log(
+    "FREE PARTICIPANT TEST"
+  );
+
+  console.log(
+    "Form Response Row: " +
+    lastRow
+  );
+
+
+  const result =
+    identifyBulkFreeParticipants(
+      excelFileUrl
+    );
+
+
+  console.log(
+    "HEADCOUNT: " +
+    result.headcount
+  );
+
+  console.log(
+    "FREE: " +
+    result.free
+  );
+
+
+  console.log(
+    "----------------------------------------"
+  );
+
+  console.log(
+    "FREE PARTICIPANTS:"
+  );
+
+
+  if (
+    result.freeParticipants.length === 0
+  ) {
+
+    console.log(
+      "No free participants identified."
+    );
+
+  } else {
+
+    result.freeParticipants.forEach(
+      function(participant) {
+
+        console.log(
+          "#" +
+          participant.number +
+          " | " +
+          participant.name +
+          " | Excel Row " +
+          participant.excelRow +
+          " | " +
+          participant.email
+        );
+
+      }
+    );
+
+  }
+
+
+  console.log(
+    "========================================"
+  );
+
+
+  return result;
+
+}
+/**
+ * ==========================================================
+ * NEW FEATURE:
+ * IDENTIFY FREE PARTICIPANTS
+ * ==========================================================
+ *
+ * This function ONLY reads the uploaded Excel file.
+ *
+ * It does NOT:
+ * - modify Group_Bulk Attendees
+ * - modify Individual Attendees
+ * - create QR codes
+ * - send emails
+ * - modify attendance
+ * - modify snack status
+ *
+ * Participant data starts at Excel Row 5.
+ *
+ * Free participant positions:
+ * 31, 62, 93, 124, ...
+ */
+function identifyBulkFreeParticipants(fileUrl) {
+
+  const HEADER_ROWS = 4;
+  const FREE_INTERVAL = 30;
+  const FREE_OFFSET = 1;
+
+
+  // ========================================================
+  // 1. EXTRACT DRIVE FILE ID
+  // ========================================================
+
+  const fileIdMatch =
+    String(fileUrl)
+      .match(/[-\w]{25,}/);
+
+  if (!fileIdMatch) {
+    throw new Error(
+      "Unable to extract the Excel file ID from the uploaded file link."
+    );
+  }
+
+  const fileId =
+    fileIdMatch[0];
+
+
+  // ========================================================
+  // 2. GET EXCEL FILE
+  // ========================================================
+
+  const file =
+    DriveApp.getFileById(fileId);
+
+  const blob =
+    file.getBlob();
+
+
+  // ========================================================
+  // 3. TEMPORARILY CONVERT EXCEL
+  // ========================================================
+
+  const tempFile =
+    Drive.Files.create(
+      {
+        name:
+          "TEMP_BULK_FREE_" +
+          new Date().getTime(),
+
+        mimeType:
+          MimeType.GOOGLE_SHEETS
+      },
+      blob
+    );
+
+
+  try {
+
+    // ======================================================
+    // 4. OPEN CONVERTED FILE
+    // ======================================================
+
+    const tempSpreadsheet =
+      SpreadsheetApp.openById(
+        tempFile.id
+      );
+
+
+    // ======================================================
+    // 5. FIND MASTERLIST
+    // ======================================================
+
+    const sheets =
+      tempSpreadsheet.getSheets();
+
+    let sheet =
+      tempSpreadsheet.getSheetByName(
+        "Masterlist"
+      );
+
+
+    // Fallback to first worksheet
+    if (!sheet) {
+      sheet = sheets[0];
+    }
+
+
+    if (!sheet) {
+      throw new Error(
+        "No worksheet was found in the uploaded Excel file."
+      );
+    }
+
+
+    // ======================================================
+    // 6. GET DATA
+    // ======================================================
+
+    const lastRow =
+      sheet.getLastRow();
+
+    const lastColumn =
+      sheet.getLastColumn();
+
+
+    if (lastRow <= HEADER_ROWS) {
+
+      return {
+        headcount: 0,
+        free: 0,
+        freeParticipants: []
+      };
+
+    }
+
+
+    // ======================================================
+    // 7. READ PARTICIPANTS FROM ROW 5
+    // ======================================================
+
+    const participantData =
+      sheet.getRange(
+        HEADER_ROWS + 1,
+        1,
+        lastRow - HEADER_ROWS,
+        lastColumn
+      ).getValues();
+
+
+    // ======================================================
+    // 8. BUILD PARTICIPANT LIST
+    // ======================================================
+
+    const participants = [];
+
+
+    participantData.forEach(
+      function(row, index) {
+
+        const firstName =
+          String(row[0] || "")
+            .trim();
+
+        const lastName =
+          String(row[1] || "")
+            .trim();
+
+        const middleInitial =
+          String(row[2] || "")
+            .trim();
+
+        const email =
+          String(row[3] || "")
+            .trim();
+
+        /*
+         * Only count actual participant rows.
+         */
+
+        if (
+          firstName ||
+          lastName ||
+          email
+        ) {
+
+          const participantNumber =
+            participants.length + 1;
+
+          const excelRow =
+            HEADER_ROWS + 1 + index;
+
+
+          participants.push({
+
+            number:
+              participantNumber,
+
+            excelRow:
+              excelRow,
+
+            firstName:
+              firstName,
+
+            lastName:
+              lastName,
+
+            middleInitial:
+              middleInitial,
+
+            email:
+              email,
+
+            name:
+              [
+                firstName,
+                middleInitial,
+                lastName
+              ]
+                .filter(Boolean)
+                .join(" ")
+                .trim()
+
+          });
+
+        }
+
+      }
+    );
+
+
+    // ======================================================
+    // 9. CALCULATE HEADCOUNT
+    // ======================================================
+
+    const headcount =
+      participants.length;
+
+
+    // ======================================================
+    // 10. CALCULATE FREE COUNT
+    // ======================================================
+
+    const free =
+      Math.floor(
+        headcount / FREE_INTERVAL
+      );
+
+
+    // ======================================================
+    // 11. IDENTIFY FREE PARTICIPANTS
+    // ======================================================
+
+    const freeParticipants = [];
+
+
+    /*
+     * Free positions:
+     *
+     * 31
+     * 62
+     * 93
+     * 124
+     * ...
+     *
+     * Formula:
+     *
+     * (30 × 1) + 1 = 31
+     * (30 × 2) + 2 = 62
+     * (30 × 3) + 3 = 93
+     *
+     * Equivalent:
+     *
+     * participantNumber = 31 + (n × 31)
+     */
+
+    for (
+      let i = 1;
+      i <= free;
+      i++
+    ) {
+
+      const freeParticipantNumber =
+        (FREE_INTERVAL * i) + i;
+
+
+      const participant =
+        participants.find(
+          function(p) {
+            return p.number === freeParticipantNumber;
+          }
+        );
+
+
+      /*
+       * Only identify the participant if
+       * that participant actually exists.
+       */
+      if (participant) {
+
+        freeParticipants.push(
+          participant
+        );
+
+      }
+
+    }
+
+
+    // ======================================================
+    // 12. LOG RESULTS
+    // ======================================================
+
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "FREE PARTICIPANT IDENTIFICATION"
+    );
+
+    console.log(
+      "HEADCOUNT: " +
+      headcount
+    );
+
+    console.log(
+      "FREE COUNT: " +
+      free
+    );
+
+
+    freeParticipants.forEach(
+      function(participant) {
+
+        console.log(
+          "FREE #" +
+          participant.number +
+          " | " +
+          participant.name +
+          " | Excel Row " +
+          participant.excelRow +
+          " | " +
+          participant.email
+        );
+
+      }
+    );
+
+
+    console.log(
+      "========================================"
+    );
+
+
+    // ======================================================
+    // 13. RETURN RESULTS
+    // ======================================================
+
+    return {
+
+      headcount:
+        headcount,
+
+      free:
+        free,
+
+      freeParticipants:
+        freeParticipants
+
+    };
+
+
+  } finally {
+
+    // ======================================================
+    // 14. DELETE TEMPORARY FILE
+    // ======================================================
+
+    try {
+
+      Drive.Files.remove(
+        tempFile.id
+      );
+
+    } catch (cleanupError) {
+
+      console.log(
+        "Temporary file cleanup failed: " +
+        cleanupError
+      );
+
+    }
+
+  }
+
+}
+
+/**
+ * ==========================================================
+ * NEW FEATURE:
+ * IDENTIFY FREE PARTICIPANTS
+ * ==========================================================
+ *
+ * This function ONLY reads the uploaded Excel file.
+ *
+ * It does NOT:
+ * - modify Group_Bulk Attendees
+ * - modify Individual Attendees
+ * - create QR codes
+ * - send emails
+ * - modify attendance
+ * - modify snack status
+ *
+ * Participant data starts at Excel Row 5.
+ *
+ * Free participant positions:
+ * 31, 62, 93, 124, ...
+ */
+function identifyBulkFreeParticipants(fileUrl) {
+
+  const HEADER_ROWS = 4;
+  const FREE_INTERVAL = 30;
+  const FREE_OFFSET = 1;
+
+
+  // ========================================================
+  // 1. EXTRACT DRIVE FILE ID
+  // ========================================================
+
+  const fileIdMatch =
+    String(fileUrl)
+      .match(/[-\w]{25,}/);
+
+  if (!fileIdMatch) {
+    throw new Error(
+      "Unable to extract the Excel file ID from the uploaded file link."
+    );
+  }
+
+  const fileId =
+    fileIdMatch[0];
+
+
+  // ========================================================
+  // 2. GET EXCEL FILE
+  // ========================================================
+
+  const file =
+    DriveApp.getFileById(fileId);
+
+  const blob =
+    file.getBlob();
+
+
+  // ========================================================
+  // 3. TEMPORARILY CONVERT EXCEL
+  // ========================================================
+
+  const tempFile =
+    Drive.Files.create(
+      {
+        name:
+          "TEMP_BULK_FREE_" +
+          new Date().getTime(),
+
+        mimeType:
+          MimeType.GOOGLE_SHEETS
+      },
+      blob
+    );
+
+
+  try {
+
+    // ======================================================
+    // 4. OPEN CONVERTED FILE
+    // ======================================================
+
+    const tempSpreadsheet =
+      SpreadsheetApp.openById(
+        tempFile.id
+      );
+
+
+    // ======================================================
+    // 5. FIND MASTERLIST
+    // ======================================================
+
+    const sheets =
+      tempSpreadsheet.getSheets();
+
+    let sheet =
+      tempSpreadsheet.getSheetByName(
+        "Masterlist"
+      );
+
+
+    // Fallback to first worksheet
+    if (!sheet) {
+      sheet = sheets[0];
+    }
+
+
+    if (!sheet) {
+      throw new Error(
+        "No worksheet was found in the uploaded Excel file."
+      );
+    }
+
+
+    // ======================================================
+    // 6. GET DATA
+    // ======================================================
+
+    const lastRow =
+      sheet.getLastRow();
+
+    const lastColumn =
+      sheet.getLastColumn();
+
+
+    if (lastRow <= HEADER_ROWS) {
+
+      return {
+        headcount: 0,
+        free: 0,
+        freeParticipants: []
+      };
+
+    }
+
+
+    // ======================================================
+    // 7. READ PARTICIPANTS FROM ROW 5
+    // ======================================================
+
+    const participantData =
+      sheet.getRange(
+        HEADER_ROWS + 1,
+        1,
+        lastRow - HEADER_ROWS,
+        lastColumn
+      ).getValues();
+
+
+    // ======================================================
+    // 8. BUILD PARTICIPANT LIST
+    // ======================================================
+
+    const participants = [];
+
+
+    participantData.forEach(
+      function(row, index) {
+
+        const firstName =
+          String(row[0] || "")
+            .trim();
+
+        const lastName =
+          String(row[1] || "")
+            .trim();
+
+        const middleInitial =
+          String(row[2] || "")
+            .trim();
+
+        const email =
+          String(row[3] || "")
+            .trim();
+
+        /*
+         * Only count actual participant rows.
+         */
+
+        if (
+          firstName ||
+          lastName ||
+          email
+        ) {
+
+          const participantNumber =
+            participants.length + 1;
+
+          const excelRow =
+            HEADER_ROWS + 1 + index;
+
+
+          participants.push({
+
+            number:
+              participantNumber,
+
+            excelRow:
+              excelRow,
+
+            firstName:
+              firstName,
+
+            lastName:
+              lastName,
+
+            middleInitial:
+              middleInitial,
+
+            email:
+              email,
+
+            name:
+              [
+                firstName,
+                middleInitial,
+                lastName
+              ]
+                .filter(Boolean)
+                .join(" ")
+                .trim()
+
+          });
+
+        }
+
+      }
+    );
+
+
+    // ======================================================
+    // 9. CALCULATE HEADCOUNT
+    // ======================================================
+
+    const headcount =
+      participants.length;
+
+
+    // ======================================================
+    // 10. CALCULATE FREE COUNT
+    // ======================================================
+
+    const free =
+      Math.floor(
+        headcount / FREE_INTERVAL
+      );
+
+
+    // ======================================================
+    // 11. IDENTIFY FREE PARTICIPANTS
+    // ======================================================
+
+    const freeParticipants = [];
+
+
+    /*
+     * Free positions:
+     *
+     * 31
+     * 62
+     * 93
+     * 124
+     * ...
+     *
+     * Formula:
+     *
+     * (30 × 1) + 1 = 31
+     * (30 × 2) + 2 = 62
+     * (30 × 3) + 3 = 93
+     *
+     * Equivalent:
+     *
+     * participantNumber = 31 + (n × 31)
+     */
+
+    for (
+      let i = 1;
+      i <= free;
+      i++
+    ) {
+
+      const freeParticipantNumber =
+        (FREE_INTERVAL * i) + i;
+
+
+      const participant =
+        participants.find(
+          function(p) {
+            return p.number === freeParticipantNumber;
+          }
+        );
+
+
+      /*
+       * Only identify the participant if
+       * that participant actually exists.
+       */
+      if (participant) {
+
+        freeParticipants.push(
+          participant
+        );
+
+      }
+
+    }
+
+
+    // ======================================================
+    // 12. LOG RESULTS
+    // ======================================================
+
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "FREE PARTICIPANT IDENTIFICATION"
+    );
+
+    console.log(
+      "HEADCOUNT: " +
+      headcount
+    );
+
+    console.log(
+      "FREE COUNT: " +
+      free
+    );
+
+
+    freeParticipants.forEach(
+      function(participant) {
+
+        console.log(
+          "FREE #" +
+          participant.number +
+          " | " +
+          participant.name +
+          " | Excel Row " +
+          participant.excelRow +
+          " | " +
+          participant.email
+        );
+
+      }
+    );
+
+
+    console.log(
+      "========================================"
+    );
+
+
+    // ======================================================
+    // 13. RETURN RESULTS
+    // ======================================================
+
+    return {
+
+      headcount:
+        headcount,
+
+      free:
+        free,
+
+      freeParticipants:
+        freeParticipants
+
+    };
+
+
+  } finally {
+
+    // ======================================================
+    // 14. DELETE TEMPORARY FILE
+    // ======================================================
+
+    try {
+
+      Drive.Files.remove(
+        tempFile.id
+      );
+
+    } catch (cleanupError) {
+
+      console.log(
+        "Temporary file cleanup failed: " +
+        cleanupError
+      );
+
+    }
+
+  }
+
+}
+/**
+ * ==========================================================
+ * TEST FREE PARTICIPANT IDENTIFICATION
+ * ==========================================================
+ *
+ * This does NOT modify any Google Sheet.
+ */
+function testBulkFreeParticipants() {
+
+  const ss =
+    getSpreadsheet();
+
+  const sourceSheet =
+    ss.getSheetByName(
+      "Form Responses 2"
+    );
+
+
+  if (!sourceSheet) {
+    throw new Error(
+      'Sheet "Form Responses 2" was not found.'
+    );
+  }
+
+
+  const lastRow =
+    sourceSheet.getLastRow();
+
+
+  if (lastRow < 2) {
+    throw new Error(
+      "No bulk registration submissions found."
+    );
+  }
+
+
+  // Column D = uploaded Excel
+  const excelFileUrl =
+    sourceSheet
+      .getRange(
+        lastRow,
+        4
+      )
+      .getValue();
+
+
+  if (!excelFileUrl) {
+    throw new Error(
+      "The latest bulk registration has no Excel file."
+    );
+  }
+
+
+  console.log(
+    "========================================"
+  );
+
+  console.log(
+    "FREE PARTICIPANT TEST"
+  );
+
+  console.log(
+    "Form Response Row: " +
+    lastRow
+  );
+
+
+  const result =
+    identifyBulkFreeParticipants(
+      excelFileUrl
+    );
+
+
+  console.log(
+    "HEADCOUNT: " +
+    result.headcount
+  );
+
+  console.log(
+    "FREE: " +
+    result.free
+  );
+
+
+  console.log(
+    "----------------------------------------"
+  );
+
+  console.log(
+    "FREE PARTICIPANTS:"
+  );
+
+
+  if (
+    result.freeParticipants.length === 0
+  ) {
+
+    console.log(
+      "No free participants identified."
+    );
+
+  } else {
+
+    result.freeParticipants.forEach(
+      function(participant) {
+
+        console.log(
+          "#" +
+          participant.number +
+          " | " +
+          participant.name +
+          " | Excel Row " +
+          participant.excelRow +
+          " | " +
+          participant.email
+        );
+
+      }
+    );
+
+  }
+
+
+  console.log(
+    "========================================"
+  );
+
+
+  return result;
+
+}
+
+/**
+ * =========================================================
+ * BULK REGISTRATION DISPLAY INFORMATION
+ * =========================================================
+ *
+ * Reads the already-calculated values from:
+ * Group_Bulk Attendees
+ *
+ * Columns:
+ * A = Attendee ID
+ * B = Name
+ * C = Certificate Name
+ * D = Email
+ * E = Contact
+ * F = School
+ * G = Attendance
+ * H = Attendance Time
+ * I = AM Snack
+ * J = AM Snack Time
+ * K = PM Snack
+ * L = PM Snack Time
+ * M = HEADCOUNT
+ * N = FREE
+ *
+ * Paying Participants = HEADCOUNT - FREE
+ */
+function getBulkRegistrationInfo(sheet, targetId) {
+
+  if (!sheet || sheet.getLastRow() < 2) {
+    return null;
+  }
+
+  const finder = sheet
+    .getRange("A:A")
+    .createTextFinder(targetId)
+    .matchEntireCell(true)
+    .matchCase(false);
+
+  const cell = finder.findNext();
+
+  if (!cell) {
+    return null;
+  }
+
+  const rowIndex = cell.getRow();
+
+  if (rowIndex < 2) {
+    return null;
+  }
+
+  // Read through column N.
+  const rowData = sheet
+    .getRange(rowIndex, 1, 1, 14)
+    .getDisplayValues()[0];
+
+  const school = String(rowData[5] || "").trim();
+
+  const headcount =
+    parseInt(String(rowData[12] || "").replace(/,/g, ""), 10) || 0;
+
+  const free =
+    parseInt(String(rowData[13] || "").replace(/,/g, ""), 10) || 0;
+
+  const payingParticipants =
+    Math.max(headcount - free, 0);
+
+  return {
+    isBulk: true,
+    school: school || "School Not Specified",
+    headcount: headcount,
+    free: free,
+    payingParticipants: payingParticipants
+  };
+}

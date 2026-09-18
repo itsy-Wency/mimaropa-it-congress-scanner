@@ -3011,3 +3011,202 @@ label:focus-visible {
     }
 
 }
+
+/* =========================================================
+   BULK REGISTRATION SUMMARY
+   ========================================================= */
+
+.bulk-registration-info {
+    margin: 18px 0;
+    padding: 16px;
+    border-radius: 16px;
+
+    background:
+        linear-gradient(
+            145deg,
+            rgba(255,255,255,0.08),
+            rgba(255,255,255,0.03)
+        );
+
+    border: 1px solid rgba(22, 230, 165, 0.18);
+
+    box-shadow:
+        inset 2px 2px 5px rgba(255,255,255,0.04),
+        inset -2px -2px 5px rgba(0,0,0,0.15);
+}
+
+
+/* SCHOOL */
+
+.bulk-school {
+    text-align: center;
+    padding-bottom: 14px;
+    margin-bottom: 14px;
+
+    border-bottom:
+        1px solid rgba(255,255,255,0.08);
+}
+
+.bulk-school strong {
+    display: block;
+    margin-top: 5px;
+
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+
+/* LABEL */
+
+.bulk-label {
+    display: block;
+
+    font-size: 9px;
+    font-weight: 700;
+
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+
+    opacity: 0.65;
+}
+
+
+/* SUMMARY TITLE */
+
+.bulk-summary-title {
+    margin-bottom: 10px;
+
+    font-size: 10px;
+    font-weight: 800;
+
+    letter-spacing: 1.5px;
+    text-align: center;
+}
+
+
+/* SUMMARY GRID */
+
+.bulk-summary-grid {
+    display: grid;
+
+    grid-template-columns:
+        repeat(3, 1fr);
+
+    gap: 8px;
+}
+
+
+/* SUMMARY ITEM */
+
+.bulk-summary-item {
+    padding: 12px 6px;
+
+    text-align: center;
+
+    border-radius: 12px;
+
+    background:
+        rgba(0,0,0,0.12);
+
+    border:
+        1px solid rgba(255,255,255,0.06);
+}
+
+
+/* NUMBER */
+
+.bulk-summary-item strong {
+    display: block;
+
+    margin-top: 5px;
+
+    font-size: 22px;
+    line-height: 1;
+
+    font-weight: 800;
+}
+
+
+/* MOBILE */
+
+@media (max-width: 480px) {
+
+    .bulk-registration-info {
+        margin: 14px 0;
+        padding: 13px;
+    }
+
+    .bulk-summary-grid {
+        grid-template-columns:
+            repeat(3, 1fr);
+
+        gap: 6px;
+    }
+
+    .bulk-summary-item {
+        padding: 10px 4px;
+    }
+
+    .bulk-summary-item strong {
+        font-size: 18px;
+    }
+
+    .bulk-label {
+        font-size: 8px;
+        letter-spacing: 0.8px;
+    }
+
+    .bulk-school strong {
+        font-size: 12px;
+    }
+}
+
+/* =========================================================
+   INDIVIDUAL ATTENDEE SCHOOL
+   ========================================================= */
+
+#individualSchoolInfo {
+    display: none;
+    margin: 10px 0 12px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: rgba(0, 100, 70, 0.06);
+    border: 1px solid rgba(0, 100, 70, 0.12);
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+#individualSchoolInfo .school-label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.62;
+}
+
+#individualSchoolInfo .school-name {
+    display: block;
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.3;
+}
+
+/* =========================================================
+   INDIVIDUAL SCAN SCHOOL DISPLAY
+   Actual value from Google Sheets Column F only.
+========================================================= */
+.individual-school {
+    margin-top: 6px;
+    padding: 0;
+    text-align: center;
+}
+
+.individual-school strong {
+    display: block;
+    color: var(--text-main, #ffffff);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.35;
+}

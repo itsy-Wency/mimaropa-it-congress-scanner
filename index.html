@@ -38,7 +38,6 @@
          TOP HEADER
     ========================================== -->
     <header class="event-header">
-<header class="event-header">
 
     <div class="header-inner">
 
@@ -478,13 +477,22 @@
                 ATTENDEE NAME
             </div>
 
-
+            <div
+                id="individualSchoolDisplay"
+                class="individual-school"
+                style="display:none;"
+            >
+                <strong id="individualModalSchool"></strong>
+            </div>
+            
             <div
                 id="modalId"
                 class="modal-id"
             >
                 ATT-IND-0001
             </div>
+
+            
 
 
             <div class="modal-time-row">
@@ -496,7 +504,66 @@
                 </span>
 
             </div>
+            <!-- BULK REGISTRATION INFORMATION -->
+            <div
+                id="bulkRegistrationInfo"
+                class="bulk-registration-info"
+                style="display:none;"
+            >
 
+                <div class="bulk-school">
+                    <span class="bulk-label">
+                        SCHOOL / ORGANIZATION
+                    </span>
+
+                    <strong id="modalSchool">
+                        -
+                    </strong>
+                </div>
+
+
+                <div class="bulk-summary-title">
+                    REGISTRATION SUMMARY
+                </div>
+
+
+                <div class="bulk-summary-grid">
+
+                    <div class="bulk-summary-item">
+                        <span class="bulk-label">
+                            HEADCOUNT
+                        </span>
+
+                        <strong id="modalHeadcount">
+                            0
+                        </strong>
+                    </div>
+
+
+                    <div class="bulk-summary-item">
+                        <span class="bulk-label">
+                            PAYING PARTICIPANTS
+                        </span>
+
+                        <strong id="modalPaying">
+                            0
+                        </strong>
+                    </div>
+
+
+                    <div class="bulk-summary-item">
+                        <span class="bulk-label">
+                            FREE PARTICIPANTS
+                        </span>
+
+                        <strong id="modalFree">
+                            0
+                        </strong>
+                    </div>
+
+                </div>
+
+            </div>
 
             <div
                 id="modalMessage"

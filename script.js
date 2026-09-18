@@ -27,6 +27,54 @@ let lastScanTime = 0;
 
 const SCAN_COOLDOWN = 2500;
 
+/* =========================================================
+   ATTENDEE DIRECTORY FALLBACK
+   The Apps Script endpoint exposes ?action=attendees.
+   This guarantees that the UI can resolve FULL NAME and
+   SCHOOL from the same Google Sheet even if the scan response
+   does not include those fields.
+========================================================= */
+
+let attendeeDirectory = [];
+
+function loadAttendeeDirectory() {
+    fetch(DEPLOYED_WEB_APP_URL + "?action=attendees", {
+        method: "GET",
+        cache: "no-store",
+        redirect: "follow"
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(list => {
+        if (Array.isArray(list)) {
+            attendeeDirectory = list.map(item => ({
+                id: String(item.id || "").trim().toUpperCase(),
+                name: String(item.name || "").trim(),
+                school: String(item.school || "").trim()
+            })).filter(item => item.id);
+
+            console.log("Attendee directory loaded:", attendeeDirectory.length);
+        }
+    })
+    .catch(error => {
+        console.warn("Attendee directory fallback unavailable:", error);
+    });
+}
+
+function findAttendeeById(attendeeId) {
+    const cleanId = String(attendeeId || "").trim().toUpperCase();
+
+    if (!cleanId || !Array.isArray(attendeeDirectory)) {
+        return null;
+    }
+
+    return attendeeDirectory.find(item => item.id === cleanId) || null;
+}
+
 
 /* =========================================================
    DOM ELEMENTS
@@ -72,8 +120,8 @@ const confirmOverride =
 
 window.addEventListener("load", () => {
 
+    loadAttendeeDirectory();
     initializeScanner();
-
     setupEvents();
 
 });
@@ -750,16 +798,37 @@ function handleResponse(res) {
             .trim();
 
 
-    const name =
-        String(
-            data.name || ""
-        )
-            .trim();
-
-
     const attendeeId =
         String(
             data.attendeeId || ""
+        )
+            .trim();
+
+    /*
+     * PRIMARY SOURCE: Apps Script response.
+     * FALLBACK SOURCE: attendee directory loaded from the same
+     * Google Sheet using ?action=attendees.
+     * This prevents the UI from falling back to ATTENDEE when
+     * the scan itself was successfully recorded.
+     */
+    const directoryRecord = findAttendeeById(attendeeId);
+
+    const name =
+        String(
+            data.name ||
+            data.fullName ||
+            data.fullname ||
+            (directoryRecord && directoryRecord.name) ||
+            ""
+        )
+            .trim();
+
+    const school =
+        String(
+            data.school ||
+            data.schoolName ||
+            (directoryRecord && directoryRecord.school) ||
+            ""
         )
             .trim();
 
@@ -777,7 +846,55 @@ function handleResponse(res) {
             "No additional information was provided."
         )
             .trim();
+    /* ---------------------------------------------------------
+       BULK REGISTRATION INFORMATION
+    --------------------------------------------------------- */
 
+    const bulkFlag =
+        data.isBulk === true ||
+        String(data.isBulk || "").toLowerCase() === "true" ||
+        String(data.isBulk || "") === "1" ||
+        String(data.attendeeId || "").toUpperCase().startsWith("ATT-BLK-");
+
+    const bulkInfo =
+        bulkFlag
+            ? {
+                isBulk: true,
+
+                school:
+                    String(
+                        data.school ||
+                        data.schoolName ||
+                        (directoryRecord && directoryRecord.school) ||
+                        ""
+                    ).trim(),
+
+                headcount:
+                    Number(
+                        data.headcount ??
+                        data.headCount ??
+                        0
+                    ),
+
+                free:
+                    Number(
+                        data.free ??
+                        data.freeParticipants ??
+                        0
+                    ),
+
+                payingParticipants:
+                    Number(
+                        data.payingParticipants ??
+                        data.paying ??
+                        Math.max(
+                            Number(data.headcount ?? data.headCount ?? 0) -
+                            Number(data.free ?? data.freeParticipants ?? 0),
+                            0
+                        )
+                    )
+            }
+            : null;
 
     console.log(
         "Normalized scan response:",
@@ -790,6 +907,8 @@ function handleResponse(res) {
             message: message
         }
     );
+
+    
 
 
     /* =========================================================
@@ -819,6 +938,7 @@ function handleResponse(res) {
 
         const safeName =
             name ||
+            (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
@@ -848,7 +968,10 @@ function handleResponse(res) {
             safeName,
             attendeeId,
             safeTimestamp,
-            safeMessage
+            safeMessage,
+            bulkInfo,
+            school
+
         );
 
 
@@ -876,6 +999,7 @@ function handleResponse(res) {
 
         const safeName =
             name ||
+            (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
@@ -905,7 +1029,9 @@ function handleResponse(res) {
             safeName,
             attendeeId,
             safeTimestamp,
-            safeMessage
+            safeMessage,
+            bulkInfo,
+            school
         );
 
 
@@ -932,6 +1058,7 @@ function handleResponse(res) {
 
         const safeName =
             name ||
+            (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
@@ -961,7 +1088,9 @@ function handleResponse(res) {
             safeName,
             attendeeId,
             safeTimestamp,
-            safeMessage
+            safeMessage,
+            null,
+            school
         );
 
 
@@ -1010,7 +1139,9 @@ function handleResponse(res) {
         safeName,
         attendeeId,
         safeTimestamp,
-        safeMessage
+        safeMessage,
+        null,
+        school
     );
 
 
@@ -1226,7 +1357,9 @@ function showResultModal(
     name,
     attendeeId,
     timestamp,
-    message
+    message,
+    bulkInfo = null,
+    school = ""
 ) {
     const modalElement = document.getElementById("resultModal");
 
@@ -1256,6 +1389,31 @@ function showResultModal(
 
     const modalMessage =
         document.getElementById("modalMessage");
+
+    /* Individual school block (used only for individual registrations). */
+    const individualSchool =
+        modalElement.querySelector(".individual-school");
+
+    const individualModalSchool =
+        document.getElementById("individualModalSchool");
+
+
+    /* BULK REGISTRATION MODAL ELEMENTS */
+
+    const bulkRegistrationInfo =
+        document.getElementById("bulkRegistrationInfo");
+
+    const modalSchool =
+        document.getElementById("modalSchool");
+
+    const modalHeadcount =
+        document.getElementById("modalHeadcount");
+
+    const modalPaying =
+        document.getElementById("modalPaying");
+
+    const modalFree =
+        document.getElementById("modalFree");
 
 
     /* -----------------------------------------------------
@@ -1375,6 +1533,124 @@ function showResultModal(
     if (modalMessage) {
         modalMessage.textContent =
             safeMessage;
+    }
+
+    /* ---------------------------------------------------------
+       BULK REGISTRATION SUMMARY
+    --------------------------------------------------------- */
+
+    if (
+        bulkRegistrationInfo &&
+        bulkInfo &&
+        bulkInfo.isBulk === true
+    ) {
+
+        /* Show ONLY the previous working bulk summary. */
+        bulkRegistrationInfo.style.display = "block";
+
+        /* Bulk registrations use the bulk summary school field. */
+        if (individualSchool) {
+            individualSchool.style.display = "none";
+        }
+
+        const bulkSchoolLabel =
+            bulkRegistrationInfo.querySelector(".bulk-school .bulk-label");
+
+        if (bulkSchoolLabel) {
+            bulkSchoolLabel.textContent = "BULK REGISTRATION";
+        }
+
+        if (modalSchool) {
+            modalSchool.textContent =
+                bulkInfo.school || "School Not Specified";
+        }
+
+        if (modalHeadcount) {
+            modalHeadcount.textContent =
+                Number(bulkInfo.headcount || 0).toLocaleString();
+        }
+
+        if (modalPaying) {
+            modalPaying.textContent =
+                Number(bulkInfo.payingParticipants || 0).toLocaleString();
+        }
+
+        if (modalFree) {
+            modalFree.textContent =
+                Number(bulkInfo.free || 0).toLocaleString();
+        }
+
+        /* Remove any duplicate generic placeholder outside the bulk box. */
+        const modalContent =
+            modalElement.querySelector(".modal-content");
+
+        if (modalContent) {
+            modalContent.querySelectorAll("*").forEach(element => {
+                if (bulkRegistrationInfo.contains(element)) {
+                    return;
+                }
+
+                const text =
+                    String(element.textContent || "")
+                        .replace(/\s+/g, " ")
+                        .trim()
+                        .toUpperCase();
+
+                if (
+                    text === "SCHOOL / ORGANIZATION" ||
+                    text === "SCHOOL / ORGANIZATION -"
+                ) {
+                    element.style.display = "none";
+                }
+            });
+        }
+
+    }
+
+    else {
+
+        /* Individual registration: display the actual School value from Column F. */
+        if (bulkRegistrationInfo) {
+            bulkRegistrationInfo.style.display = "none";
+        }
+
+        const actualSchool =
+            String(school || (directoryRecord && directoryRecord.school) || "")
+                .trim();
+
+        if (individualSchool) {
+            individualSchool.style.display = actualSchool ? "block" : "none";
+        }
+
+        /* The label SCHOOL / ORGANIZATION is obsolete.
+           Only the actual Column F value is shown. */
+        if (individualSchoolLabel) {
+            individualSchoolLabel.style.display = "none";
+        }
+
+        if (individualModalSchool) {
+            individualModalSchool.textContent = actualSchool || "";
+            individualModalSchool.style.display = actualSchool ? "block" : "none";
+        }
+
+        /* Compatibility fallback for older HTML templates. */
+        if (!individualSchool && actualSchool && modalName) {
+            let fallbackSchool =
+                modalElement.querySelector("#fallbackIndividualSchool");
+
+            if (!fallbackSchool) {
+                fallbackSchool = document.createElement("div");
+                fallbackSchool.id = "fallbackIndividualSchool";
+                fallbackSchool.className = "individual-school";
+                fallbackSchool.style.textAlign = "center";
+                fallbackSchool.style.marginTop = "4px";
+                modalName.insertAdjacentElement("afterend", fallbackSchool);
+            }
+
+            fallbackSchool.textContent = actualSchool;
+            fallbackSchool.style.display = "block";
+        }
+
     }
 
 
@@ -1797,9 +2073,24 @@ function handleOverrideResponse(
             .toUpperCase();
 
 
+    const directoryRecord = findAttendeeById(attendeeId);
+
     const name =
         String(
-            data.name || ""
+            data.name ||
+            data.fullName ||
+            data.fullname ||
+            (directoryRecord && directoryRecord.name) ||
+            ""
+        )
+            .trim();
+
+    const school =
+        String(
+            data.school ||
+            data.schoolName ||
+            (directoryRecord && directoryRecord.school) ||
+            ""
         )
             .trim();
 
@@ -1832,6 +2123,7 @@ function handleOverrideResponse(
 
         const safeName =
             name ||
+            (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
@@ -1856,7 +2148,9 @@ function handleOverrideResponse(
             safeName,
             attendeeId,
             safeTimestamp,
-            message
+            message,
+            null,
+            school
         );
 
 
@@ -1885,6 +2179,7 @@ function handleOverrideResponse(
 
         const safeName =
             name ||
+            (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
@@ -1909,7 +2204,9 @@ function handleOverrideResponse(
             safeName,
             attendeeId,
             safeTimestamp,
-            message
+            message,
+            null,
+            school
         );
 
 
