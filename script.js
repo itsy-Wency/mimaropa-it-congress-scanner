@@ -1400,7 +1400,11 @@ function showResultModal(
 
     /* Individual school block (used only for individual registrations). */
     const individualSchool =
+        document.getElementById("individualSchoolDisplay") ||
         modalElement.querySelector(".individual-school");
+
+    const individualSchoolLabel =
+        document.getElementById("individualSchoolLabel");
 
     const individualModalSchool =
         document.getElementById("individualModalSchool");
