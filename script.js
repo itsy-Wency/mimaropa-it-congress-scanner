@@ -542,22 +542,14 @@ function submitManualId() {
 /* =========================================================
    PROCESS CHECK-IN
 ========================================================= */
-
 function processCheckIn(attendeeId) {
-
     if (isProcessing) {
-
         return;
-
     }
 
-
-    const session =
-        getSelectedStation();
-
+    const session = getSelectedStation();
 
     if (!session) {
-
         updateStatus(
             "error",
             "TRY AGAIN",
@@ -565,16 +557,11 @@ function processCheckIn(attendeeId) {
             "",
             "Please select a check-in station."
         );
-
         return;
-
     }
 
-
     isProcessing = true;
-
     setProcessingState(true);
-
 
     updateStatus(
         "idle",
@@ -584,102 +571,61 @@ function processCheckIn(attendeeId) {
         `Checking ${attendeeId}...`
     );
 
-
     const payload = {
-
         action: "scan",
-
         attendeeId: attendeeId,
-
         session: session
-
     };
 
-
-    fetch(
-        DEPLOYED_WEB_APP_URL,
-        {
-
-            method: "POST",
-
-            redirect: "follow",
-
-            headers: {
-
-                "Content-Type":
-                    "text/plain;charset=utf-8"
-
-            },
-
-            body:
-                JSON.stringify(payload)
-
-        }
-    )
-
-    .then(response => {
-
-        if (!response.ok) {
-
-            throw new Error(
-                `HTTP ${response.status}`
-            );
-
-        }
-
-
-        return response.text();
-
+    fetch(DEPLOYED_WEB_APP_URL, {
+        method: "POST",
+        redirect: "follow",
+        headers: {
+            "Content-Type": "text/plain;charset=utf-8"
+        },
+        body: JSON.stringify(payload)
     })
-
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP Server Error ${response.status}`);
+        }
+        return response.text();
+    })
     .then(text => {
+        console.log("Apps Script response:", text);
 
-        console.log(
-            "Apps Script response:",
-            text
-        );
-
+        // Catch Google Apps Script HTML error pages before JSON parsing fails
+        if (text.trim().startsWith("<!DOCTYPE") || text.includes("<html")) {
+            throw new Error("Server execution timeout. Please tap scan again.");
+        }
 
         let result;
 
-
         try {
-
-            result =
-                JSON.parse(text);
-
+            result = JSON.parse(text);
+        } catch (error) {
+            console.error("JSON parsing failed:", error);
+            throw new Error("Invalid response format received from server.");
         }
-
-        catch (error) {
-
-            console.error(
-                "JSON parsing failed:",
-                error
-            );
-
-            throw new Error(
-                "Invalid JSON response from Apps Script."
-            );
-
-        }
-
 
         handleResponse(result);
-
     })
-
     .catch(error => {
-
-        console.error(
-            "Check-in request failed:",
-            error
+        console.error("Check-in request failed:", error);
+        
+        // Pass the actual message to the UI instead of falling back to generic text
+        updateStatus(
+            "error",
+            "CONNECTION ERROR",
+            "",
+            typeof getCurrentTimestamp === "function" ? getCurrentTimestamp() : "",
+            error.message || "Unable to communicate with the check-in server."
         );
-
-
-        handleError(error);
-
+    })
+    .finally(() => {
+        isProcessing = false;
+        setProcessingState(false);
     });
-
 }
 
 
@@ -1692,220 +1638,111 @@ function openOverrideModal() {
 /* =========================================================
    PROCESS MANUAL OVERRIDE
 ========================================================= */
-
 function processManualOverride() {
+    const attendeeId = overrideAttendeeId
+        ? overrideAttendeeId.value.trim().toUpperCase()
+        : "";
 
-    const attendeeId =
-        overrideAttendeeId
-            ? overrideAttendeeId.value
-                .trim()
-                .toUpperCase()
-            : "";
+    const pin = overridePin
+        ? overridePin.value
+        : "";
 
-
-    const pin =
-        overridePin
-            ? overridePin.value
-            : "";
-
-
-    const session =
-        getSelectedStation();
-
+    const session = getSelectedStation();
 
     if (!attendeeId) {
-
-        alert(
-            "Please enter an Attendee ID."
-        );
-
-
-        if (overrideAttendeeId) {
-
-            overrideAttendeeId.focus();
-
-        }
-
-
+        alert("Please enter an Attendee ID.");
+        if (overrideAttendeeId) overrideAttendeeId.focus();
         return;
-
     }
-
 
     if (!pin) {
-
-        alert(
-            "Please enter the override PIN."
-        );
-
-
-        if (overridePin) {
-
-            overridePin.focus();
-
-        }
-
-
+        alert("Please enter the override PIN.");
+        if (overridePin) overridePin.focus();
         return;
-
     }
-
 
     if (!session) {
-
-        alert(
-            "Please select a check-in station."
-        );
-
-
+        alert("Please select a check-in station.");
         return;
-
     }
-
 
     if (confirmOverride) {
-
-        confirmOverride.disabled =
-            true;
-
-
-        confirmOverride.innerHTML =
-            `
+        confirmOverride.disabled = true;
+        confirmOverride.innerHTML = `
             <i class="bi bi-arrow-repeat"></i>
             VERIFYING AUTHORIZATION...
-            `;
-
+        `;
     }
 
-
-    fetch(
-        DEPLOYED_WEB_APP_URL,
-        {
-
-            method: "POST",
-
-            redirect: "follow",
-
-            headers: {
-
-                "Content-Type":
-                    "text/plain;charset=utf-8"
-
-            },
-
-            body:
-                JSON.stringify({
-
-                    action:
-                        "manualOverride",
-
-                    attendeeId:
-                        attendeeId,
-
-                    session:
-                        session,
-
-                    pin:
-                        pin
-
-                })
-
-        }
-    )
-
-    .then(response => {
-
-        if (!response.ok) {
-
-            throw new Error(
-                `HTTP ${response.status}`
-            );
-
-        }
-
-
-        return response.text();
-
+    fetch(DEPLOYED_WEB_APP_URL, {
+        method: "POST",
+        redirect: "follow",
+        headers: {
+            "Content-Type": "text/plain;charset=utf-8"
+        },
+        body: JSON.stringify({
+            action: "manualOverride",
+            attendeeId: attendeeId,
+            session: session,
+            pin: pin
+        })
     })
-
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP Server Error ${response.status}`);
+        }
+        return response.text();
+    })
     .then(text => {
+        console.log("Manual override response:", text);
 
-        console.log(
-            "Manual override response:",
-            text
-        );
-
+        // Intercept Apps Script HTML crash pages before JSON parsing fails
+        if (text.trim().startsWith("<!DOCTYPE") || text.includes("<html")) {
+            throw new Error("Server execution timeout. Please try authorizing again.");
+        }
 
         let result;
 
-
         try {
-
-            result =
-                JSON.parse(text);
-
+            result = JSON.parse(text);
+        } catch (error) {
+            console.error("JSON parsing failed:", error);
+            throw new Error("Invalid response format received from server.");
         }
 
-        catch (error) {
-
-            throw new Error(
-                "Invalid JSON response from Apps Script."
-            );
-
-        }
-
-
-        handleOverrideResponse(
-            result,
-            attendeeId
-        );
-
+        handleOverrideResponse(result, attendeeId);
     })
-
     .catch(error => {
+        console.error("Manual override error:", error);
 
-        console.error(
-            "Manual override error:",
-            error
-        );
-
+        const timestamp = typeof getCurrentTimestamp === "function" ? getCurrentTimestamp() : "";
+        const errorMessage = error.message || "Unable to process manual override.";
 
         updateStatus(
             "error",
             "TRY AGAIN",
             "",
-            getCurrentTimestamp(),
-            "Unable to process manual override."
+            timestamp,
+            errorMessage
         );
-
 
         showResultModal(
             "error",
             "TRY AGAIN",
             "",
             attendeeId,
-            getCurrentTimestamp(),
-            "Unable to process manual override."
+            timestamp,
+            errorMessage
         );
-
     })
-
     .finally(() => {
-
         if (confirmOverride) {
-
-            confirmOverride.disabled =
-                false;
-
-
-            confirmOverride.innerHTML =
-                `
+            confirmOverride.disabled = false;
+            confirmOverride.innerHTML = `
                 <i class="bi bi-shield-check"></i>
                 AUTHORIZE OVERRIDE
-                `;
-
+            `;
         }
-
     });
 
 }
