@@ -680,51 +680,15 @@ function processCheckIn(attendeeId) {
     });
 }
 
-
 /* =========================================================
    HANDLE RESPONSE
 ========================================================= */
 
 function handleResponse(res) {
-
     console.log(
         "Processed result:",
         res
     );
-
-
-    /*
-        IMPORTANT
-
-        Apps Script responses may be returned as:
-
-        1. Direct object:
-
-        {
-            status: "SUCCESS",
-            name: "CASEY JASPER CHAVEZ",
-            attendeeId: "ATT-IND-CHAVEZ1",
-            timestamp: "...",
-            message: "..."
-        }
-
-        OR:
-
-        2. Wrapped object:
-
-        {
-            found: true,
-            result: {
-                status: "SUCCESS",
-                name: "CASEY JASPER CHAVEZ",
-                attendeeId: "ATT-IND-CHAVEZ1",
-                timestamp: "...",
-                message: "..."
-            }
-        }
-
-        This normalization handles BOTH.
-    */
 
     const data =
         res &&
@@ -732,7 +696,6 @@ function handleResponse(res) {
         typeof res.result === "object"
             ? res.result
             : res;
-
 
     /* ---------------------------------------------------------
        INVALID RESPONSE
@@ -742,19 +705,15 @@ function handleResponse(res) {
         !data ||
         typeof data !== "object"
     ) {
-
         console.error(
             "Invalid Apps Script response:",
             res
         );
 
-
         playSound("error");
-
 
         const timestamp =
             getCurrentTimestamp();
-
 
         updateStatus(
             "error",
@@ -763,7 +722,6 @@ function handleResponse(res) {
             timestamp,
             "The check-in server returned an invalid response."
         );
-
 
         showResultModal(
             "error",
@@ -774,13 +732,10 @@ function handleResponse(res) {
             "The check-in server returned an invalid response."
         );
 
-
         finishProcessing();
 
         return;
-
     }
-
 
     /* ---------------------------------------------------------
        NORMALIZE RESPONSE VALUES
@@ -793,7 +748,6 @@ function handleResponse(res) {
             .trim()
             .toUpperCase();
 
-
     const displayStatus =
         String(
             data.displayStatus ||
@@ -801,20 +755,12 @@ function handleResponse(res) {
         )
             .trim();
 
-
     const attendeeId =
         String(
             data.attendeeId || ""
         )
             .trim();
 
-    /*
-     * PRIMARY SOURCE: Apps Script response.
-     * FALLBACK SOURCE: attendee directory loaded from the same
-     * Google Sheet using ?action=attendees.
-     * This prevents the UI from falling back to ATTENDEE when
-     * the scan itself was successfully recorded.
-     */
     const safeAttendeeId = (typeof attendeeId !== "undefined" && attendeeId) 
         ? attendeeId 
         : (data && (data.attendeeId || data.id)) || "";
@@ -840,13 +786,11 @@ function handleResponse(res) {
         )
             .trim();
 
-
     const timestamp =
         String(
             data.timestamp || ""
         )
             .trim();
-
 
     const message =
         String(
@@ -854,6 +798,7 @@ function handleResponse(res) {
             "No additional information was provided."
         )
             .trim();
+
     /* ---------------------------------------------------------
        BULK REGISTRATION INFORMATION
     --------------------------------------------------------- */
@@ -916,9 +861,6 @@ function handleResponse(res) {
         }
     );
 
-    
-
-
     /* =========================================================
        SUCCESS
     ========================================================= */
@@ -926,23 +868,7 @@ function handleResponse(res) {
     if (
         status === "SUCCESS"
     ) {
-
         playSound("success");
-
-
-        /*
-            If the backend sends the attendee name,
-            use it.
-
-            If the name is unavailable but the attendee ID
-            exists, display the attendee ID instead.
-
-            This prevents the misleading:
-
-            "ATTENDEE NOT IDENTIFIED"
-
-            message.
-        */
 
         const safeName =
             name ||
@@ -950,16 +876,13 @@ function handleResponse(res) {
             attendeeId ||
             "ATTENDEE";
 
-
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
 
-
         const safeMessage =
             message ||
             "Check-in recorded successfully.";
-
 
         updateStatus(
             "success",
@@ -968,7 +891,6 @@ function handleResponse(res) {
             safeTimestamp,
             safeMessage
         );
-
 
         showResultModal(
             "success",
@@ -979,19 +901,14 @@ function handleResponse(res) {
             safeMessage,
             bulkInfo,
             school
-
         );
 
-
         clearInput();
-
 
         finishProcessing();
 
         return;
-
     }
-
 
     /* =========================================================
        ALREADY SCANNED
@@ -1001,9 +918,7 @@ function handleResponse(res) {
         status === "ALREADY_SCANNED" ||
         status === "ALREADY_PROCESSED"
     ) {
-
         playSound("error");
-
 
         const safeName =
             name ||
@@ -1011,16 +926,13 @@ function handleResponse(res) {
             attendeeId ||
             "ATTENDEE";
 
-
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
 
-
         const safeMessage =
             message ||
             "This attendee has already been recorded.";
-
 
         updateStatus(
             "already",
@@ -1029,7 +941,6 @@ function handleResponse(res) {
             safeTimestamp,
             safeMessage
         );
-
 
         showResultModal(
             "already",
@@ -1042,16 +953,12 @@ function handleResponse(res) {
             school
         );
 
-
         clearInput();
-
 
         finishProcessing();
 
         return;
-
     }
-
 
     /* =========================================================
        BLOCKED / VALIDATION FAILURE
@@ -1060,9 +967,7 @@ function handleResponse(res) {
     if (
         status === "BLOCKED"
     ) {
-
         playSound("error");
-
 
         const safeName =
             name ||
@@ -1070,16 +975,13 @@ function handleResponse(res) {
             attendeeId ||
             "ATTENDEE";
 
-
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
 
-
         const safeMessage =
             message ||
             "This check-in cannot be processed yet.";
-
 
         updateStatus(
             "error",
@@ -1088,7 +990,6 @@ function handleResponse(res) {
             safeTimestamp,
             safeMessage
         );
-
 
         showResultModal(
             "error",
@@ -1101,13 +1002,10 @@ function handleResponse(res) {
             school
         );
 
-
         finishProcessing();
 
         return;
-
     }
-
 
     /* =========================================================
        INVALID / UNKNOWN ERROR
@@ -1115,22 +1013,18 @@ function handleResponse(res) {
 
     playSound("error");
 
-
     const safeName =
         name ||
         attendeeId ||
         "";
 
-
     const safeTimestamp =
         timestamp ||
         getCurrentTimestamp();
 
-
     const safeMessage =
         message ||
         "Unable to process this check-in. Please try again.";
-
 
     updateStatus(
         "error",
@@ -1139,7 +1033,6 @@ function handleResponse(res) {
         safeTimestamp,
         safeMessage
     );
-
 
     showResultModal(
         "error",
@@ -1152,47 +1045,34 @@ function handleResponse(res) {
         school
     );
 
-
     finishProcessing();
-
 }
-
 
 /* =========================================================
    FINISH PROCESSING
 ========================================================= */
 
 function finishProcessing() {
-
     setTimeout(() => {
-
         isProcessing = false;
-
         setProcessingState(false);
-
     }, 500);
-
 }
-
 
 /* =========================================================
    HANDLE REQUEST ERROR
 ========================================================= */
 
 function handleError(error) {
-
     console.error(
         "Request error:",
         error
     );
 
-
     playSound("error");
-
 
     const timestamp =
         getCurrentTimestamp();
-
 
     updateStatus(
         "error",
@@ -1201,7 +1081,6 @@ function handleError(error) {
         timestamp,
         "Unable to communicate with the check-in server. Please try again."
     );
-
 
     showResultModal(
         "error",
@@ -1212,11 +1091,8 @@ function handleError(error) {
         "Unable to communicate with the check-in server. Please try again."
     );
 
-
     finishProcessing();
-
 }
-
 
 /* =========================================================
    STATUS DISPLAY
@@ -1229,130 +1105,85 @@ function updateStatus(
     timestamp,
     message
 ) {
-
     if (!statusBox) {
         return;
     }
 
-
     statusBox.className =
         `result-panel ${type}`;
 
-
     if (resultTitle) {
-
         resultTitle.textContent =
             title ||
             "READY TO SCAN";
-
     }
 
-
     if (resultName) {
-
         resultName.textContent =
             name ||
             "No attendee scanned";
-
     }
 
-
     if (resultTime) {
-
         resultTime.textContent =
             timestamp ||
             "Waiting for QR code...";
-
     }
 
-
     if (resultMessage) {
-
         resultMessage.textContent =
             message ||
             "Select a station and scan an attendee QR code.";
-
     }
 
-
     updateResultIcon(type);
-
 }
-
 
 /* =========================================================
    RESULT ICON
 ========================================================= */
 
 function updateResultIcon(type) {
-
     if (!statusBox) {
         return;
     }
-
 
     const icon =
         statusBox.querySelector(
             ".result-icon i"
         );
 
-
     if (!icon) {
         return;
     }
 
-
     icon.className =
         "bi";
-
 
     if (
         type === "success"
     ) {
-
         icon.classList.add(
             "bi-check-circle-fill"
         );
-
-    }
-
-
-    else if (
+    } else if (
         type === "already"
     ) {
-
         icon.classList.add(
             "bi-exclamation-circle-fill"
         );
-
-    }
-
-
-    else if (
+    } else if (
         type === "error"
     ) {
-
         icon.classList.add(
             "bi-x-circle-fill"
         );
-
-    }
-
-
-    else {
-
+    } else {
         icon.classList.add(
             "bi-qr-code"
         );
-
     }
-
 }
-
-
-/* =========================================================
-   RESULT MODAL
-========================================================= */
 
 /* =========================================================
    RESULT MODAL
@@ -1387,7 +1218,6 @@ function showResultModal(
     const modalTime = document.getElementById("modalTime");
     const modalMessage = document.getElementById("modalMessage");
 
-    /* Individual school block (used only for individual registrations). */
     const individualSchool =
         document.getElementById("individualSchoolDisplay") ||
         modalElement.querySelector(".individual-school");
@@ -1488,7 +1318,6 @@ function showResultModal(
         bulkInfo &&
         bulkInfo.isBulk === true
     ) {
-        /* Show the bulk summary block matching the target image layout. */
         bulkRegistrationInfo.style.display = "block";
 
         if (individualSchool) {
@@ -1499,7 +1328,6 @@ function showResultModal(
             bulkRegistrationInfo.querySelector(".bulk-school .bulk-label");
 
         if (bulkSchoolLabel) {
-            /* Matches the reference layout title exactly */
             bulkSchoolLabel.textContent = "SCHOOL / ORGANIZATION";
         }
 
@@ -1522,7 +1350,6 @@ function showResultModal(
                 Number(bulkInfo.free || 0).toLocaleString();
         }
     } else {
-        /* Individual registration fallback */
         if (bulkRegistrationInfo) {
             bulkRegistrationInfo.style.display = "none";
         }
@@ -1608,197 +1435,135 @@ function showResultModal(
     }
 }
 
-
 /* =========================================================
    SELECTED STATION
 ========================================================= */
 
 function getSelectedStation() {
-
     const selected =
         document.querySelector(
             'input[name="session"]:checked'
         );
 
-
     return selected
         ? selected.value
         : null;
-
 }
-
 
 /* =========================================================
    DISPLAY STATUS FALLBACK
 ========================================================= */
 
 function getDisplayStatus(status) {
-
     switch (status) {
-
         case "SUCCESS":
-
             return "SCAN SUCCESSFULLY";
 
-
         case "ALREADY_SCANNED":
-
         case "ALREADY_PROCESSED":
-
             return "ALREADY SCANNED";
 
-
         case "BLOCKED":
-
         case "INVALID":
-
         case "ERROR":
-
             return "TRY AGAIN";
-
 
         default:
-
             return "TRY AGAIN";
-
     }
-
 }
-
 
 /* =========================================================
    INPUT CLEAR
 ========================================================= */
 
 function clearInput() {
-
     if (searchInput) {
-
         searchInput.value = "";
-
     }
-
 }
-
 
 /* =========================================================
    PROCESSING STATE
 ========================================================= */
 
 function setProcessingState(processing) {
-
     if (!submitBtn) {
         return;
     }
 
-
     submitBtn.disabled =
         processing;
 
-
     if (processing) {
-
         submitBtn.innerHTML =
             `
             <i class="bi bi-arrow-repeat"></i>
             <span>VERIFYING</span>
             `;
-
-    }
-
-
-    else {
-
+    } else {
         submitBtn.innerHTML =
             `
             <i class="bi bi-arrow-right-circle"></i>
             <span>SUBMIT</span>
             `;
-
     }
-
 }
-
 
 /* =========================================================
    MANUAL OVERRIDE
 ========================================================= */
 
 function openOverrideModal() {
-
     if (overrideAttendeeId) {
-
         overrideAttendeeId.value =
             searchInput
                 ? searchInput.value
                     .trim()
                     .toUpperCase()
                 : "";
-
     }
-
 
     if (overridePin) {
-
         overridePin.value =
             "";
-
     }
-
 
     const modalElement =
         document.getElementById(
             "overrideModal"
         );
 
-
     if (!modalElement) {
-
         console.error(
             "Override modal element not found."
         );
 
         return;
-
     }
-
 
     const modal =
         bootstrap.Modal.getOrCreateInstance(
             modalElement
         );
 
-
     modal.show();
 
-
     setTimeout(() => {
-
         if (
             overrideAttendeeId &&
             overrideAttendeeId.value
         ) {
-
             if (overridePin) {
-
                 overridePin.focus();
-
             }
-
-        }
-
-        else if (
+        } else if (
             overrideAttendeeId
         ) {
-
             overrideAttendeeId.focus();
-
         }
-
     }, 300);
-
 }
-
 
 /* =========================================================
    PROCESS MANUAL OVERRIDE
@@ -1861,7 +1626,6 @@ function processManualOverride() {
     .then(text => {
         console.log("Manual override response:", text);
 
-        // Intercept Apps Script HTML crash pages before JSON parsing fails
         if (text.trim().startsWith("<!DOCTYPE") || text.includes("<html")) {
             throw new Error("Server execution timeout. Please try authorizing again.");
         }
@@ -1909,9 +1673,7 @@ function processManualOverride() {
             `;
         }
     });
-
 }
-
 
 /* =========================================================
    MANUAL OVERRIDE RESPONSE
@@ -1921,11 +1683,6 @@ function handleOverrideResponse(
     res,
     attendeeId
 ) {
-
-    /*
-        Normalize wrapped responses too.
-    */
-
     const data =
         res &&
         res.result &&
@@ -1933,11 +1690,8 @@ function handleOverrideResponse(
             ? res.result
             : res;
 
-
     if (!data || typeof data !== "object") {
-
         playSound("error");
-
 
         showResultModal(
             "error",
@@ -1948,11 +1702,8 @@ function handleOverrideResponse(
             "Invalid response from the check-in server."
         );
 
-
         return;
-
     }
-
 
     const status =
         String(
@@ -1986,13 +1737,11 @@ function handleOverrideResponse(
         )
             .trim();
 
-
     const timestamp =
         String(
             data.timestamp || ""
         )
             .trim();
-
 
     const message =
         String(
@@ -2001,7 +1750,6 @@ function handleOverrideResponse(
         )
             .trim();
 
-
     /* ---------------------------------------------------------
        SUCCESS
     --------------------------------------------------------- */
@@ -2009,9 +1757,7 @@ function handleOverrideResponse(
     if (
         status === "SUCCESS"
     ) {
-
         playSound("success");
-
 
         const safeName =
             name ||
@@ -2019,11 +1765,9 @@ function handleOverrideResponse(
             attendeeId ||
             "ATTENDEE";
 
-
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
-
 
         updateStatus(
             "success",
@@ -2032,7 +1776,6 @@ function handleOverrideResponse(
             safeTimestamp,
             message
         );
-
 
         showResultModal(
             "success",
@@ -2045,17 +1788,12 @@ function handleOverrideResponse(
             school
         );
 
-
         closeOverrideModal();
-
 
         clearInput();
 
-
         return;
-
     }
-
 
     /* ---------------------------------------------------------
        ALREADY SCANNED
@@ -2065,9 +1803,7 @@ function handleOverrideResponse(
         status === "ALREADY_SCANNED" ||
         status === "ALREADY_PROCESSED"
     ) {
-
         playSound("error");
-
 
         const safeName =
             name ||
@@ -2075,11 +1811,9 @@ function handleOverrideResponse(
             attendeeId ||
             "ATTENDEE";
 
-
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
-
 
         updateStatus(
             "already",
@@ -2088,7 +1822,6 @@ function handleOverrideResponse(
             safeTimestamp,
             message
         );
-
 
         showResultModal(
             "already",
@@ -2101,14 +1834,10 @@ function handleOverrideResponse(
             school
         );
 
-
         closeOverrideModal();
 
-
         return;
-
     }
-
 
     /* ---------------------------------------------------------
        INVALID PIN
@@ -2117,34 +1846,23 @@ function handleOverrideResponse(
     if (
         status === "INVALID_PIN"
     ) {
-
         playSound("error");
 
-
         if (overridePin) {
-
             overridePin.value =
                 "";
-
         }
-
 
         alert(
             "Invalid override PIN."
         );
 
-
         if (overridePin) {
-
             overridePin.focus();
-
         }
 
-
         return;
-
     }
-
 
     /* ---------------------------------------------------------
        OTHER ERROR
@@ -2152,17 +1870,14 @@ function handleOverrideResponse(
 
     playSound("error");
 
-
     const safeName =
         name ||
         attendeeId ||
         "";
 
-
     const safeTimestamp =
         timestamp ||
         getCurrentTimestamp();
-
 
     showResultModal(
         "error",
@@ -2172,43 +1887,31 @@ function handleOverrideResponse(
         safeTimestamp,
         message
     );
-
 }
-
 
 /* =========================================================
    CLOSE OVERRIDE MODAL
 ========================================================= */
 
 function closeOverrideModal() {
-
     const modalElement =
         document.getElementById(
             "overrideModal"
         );
 
-
     if (!modalElement) {
-
         return;
-
     }
-
 
     const modal =
         bootstrap.Modal.getInstance(
             modalElement
         );
 
-
     if (modal) {
-
         modal.hide();
-
     }
-
 }
-
 
 /* =========================================================
    AUDIO FEEDBACK
