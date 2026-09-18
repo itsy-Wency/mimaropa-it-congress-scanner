@@ -1647,9 +1647,7 @@ function showResultModal(
 
         /* The label SCHOOL / ORGANIZATION is obsolete.
            Only the actual Column F value is shown. */
-        if (individualSchoolLabel) {
-            individualSchoolLabel.style.display = "none";
-        }
+        document.getElementById("individualSchoolLabel")?.style.setProperty("display", "none");
 
         if (individualModalSchool) {
             individualModalSchool.textContent = actualSchool || "";
