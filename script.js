@@ -183,13 +183,12 @@ function setupEvents() {
 
     if (overrideButton) {
 
-        overrideButton.addEventListener(
-            "click",
-            openOverrideModal
-        );
+    overrideButton.addEventListener(
+        "click",
+        openOverrideModal
+    );
 
     }
-
 
     if (confirmOverride) {
 
@@ -2475,7 +2474,8 @@ function openOverrideModal() {
    PROCESS MANUAL OVERRIDE
 ========================================================= */
 function processManualOverride() {
-    console.trace("⚠️ processManualOverride() WAS CALLED");
+    console.trace(
+        "🚨 MANUAL OVERRIDE WAS TRIGGERED")
 
     const attendeeId = overrideAttendeeId
         ? overrideAttendeeId.value.trim().toUpperCase()
