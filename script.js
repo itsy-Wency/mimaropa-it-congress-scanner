@@ -44,21 +44,24 @@ function loadAttendeeDirectory() {
         redirect: "follow"
     })
     .then(response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
         return response.json();
     })
     .then(list => {
         if (Array.isArray(list)) {
             attendeeDirectory = list.map(item => ({
-                id: String(item.groupId || item.id || item.GROUP_ID || "").trim().toUpperCase(),
-                name: String(item.fullName || item.name || item.FULL_NAME || "").trim(),
-                school: String(item.school || item.SCHOOL || "").trim(),
-                headcount: Number(item.headcount || item.headCount || item.HEADCOUNT || 0),
-                free: Number(item.free || item.FREE || 0),
-                paying: Number(item.payee || item.paying || item.PAYEE || 0)
+                id: String(item.id || item.groupId || "").trim().toUpperCase(),
+                name: String(item.name || item.fullName || "").trim(),
+                school: String(item.school || "").trim(),
+                // Map the dynamic bulk counts directly from Google Sheet columns
+                headcount: Number(item.headcount ?? item.headCount ?? 0),
+                free: Number(item.free ?? item.freeParticipants ?? 0),
+                paying: Number(item.payee ?? item.paying ?? item.payingParticipants ?? 0)
             })).filter(item => item.id);
 
-            console.log("Attendee directory loaded successfully:", attendeeDirectory.length);
+            console.log("Attendee directory loaded:", attendeeDirectory.length);
         }
     })
     .catch(error => {
