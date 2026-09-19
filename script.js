@@ -1060,62 +1060,89 @@ const bulkInfo =
  * This gives the rest of the frontend
  * one consistent object to work with.
  */
+const serverRegistration =
+    data.registration &&
+    typeof data.registration === "object"
+        ? data.registration
+        : {};
 
-const registration =
-    data.registration || {
+const registration = {
 
-        groupId:
-            attendeeId,
+    ...serverRegistration,
 
-        fullName:
-            name,
+    groupId:
+        attendeeId,
 
-        certificateName:
-            data.certificateName || "",
+    fullName:
+        name,
 
-        email:
-            data.email || "",
+    certificateName:
+        data.certificateName ||
+        serverRegistration.certificateName ||
+        "",
 
-        contact:
-            data.contact || "",
+    email:
+        data.email ||
+        serverRegistration.email ||
+        "",
 
-        school:
-            school,
+    contact:
+        data.contact ||
+        serverRegistration.contact ||
+        "",
 
-        attendance:
-            data.attendanceStatus || "",
+    /* Column F */
+    school:
+        school,
 
-        attendanceTime:
-            data.attendanceTime || "",
+    attendance:
+        data.attendanceStatus ||
+        serverRegistration.attendance ||
+        "",
 
-        amSnack:
-            data.amSnack || "",
+    attendanceTime:
+        data.attendanceTime ||
+        serverRegistration.attendanceTime ||
+        "",
 
-        amSnackTime:
-            data.amSnackTime || "",
+    amSnack:
+        data.amSnack ||
+        serverRegistration.amSnack ||
+        "",
 
-        pmSnack:
-            data.pmSnack || "",
+    amSnackTime:
+        data.amSnackTime ||
+        serverRegistration.amSnackTime ||
+        "",
 
-        pmSnackTime:
-            data.pmSnackTime || "",
+    pmSnack:
+        data.pmSnack ||
+        serverRegistration.pmSnack ||
+        "",
 
-        headcount:
-            bulkInfo
-                ? bulkInfo.headcount
-                : 0,
+    pmSnackTime:
+        data.pmSnackTime ||
+        serverRegistration.pmSnackTime ||
+        "",
 
-        free:
-            bulkInfo
-                ? bulkInfo.free
-                : 0,
+    /* Column M */
+    headcount:
+        bulkInfo
+            ? bulkInfo.headcount
+            : 0,
 
-        payee:
-            bulkInfo
-                ? bulkInfo.payingParticipants
-                : 0
+    /* Column N */
+    free:
+        bulkInfo
+            ? bulkInfo.free
+            : 0,
 
-    };
+    /* Column O / PAYEE */
+    payee:
+        bulkInfo
+            ? bulkInfo.payingParticipants
+            : 0
+};
 
 
 /* ---------------------------------------------------------
@@ -1602,6 +1629,11 @@ function updateResultIcon(type) {
    MOBILE-FIRST SCAN RESULT DISPLAY
 ========================================================= */
 
+/* =========================================================
+   RESULT MODAL
+   MOBILE-FIRST SCAN RESULT DISPLAY
+   ========================================================= */
+
 function showResultModal(
     type,
     status,
@@ -1612,12 +1644,17 @@ function showResultModal(
     bulkInfo = null,
     school = ""
 ) {
-    const modalElement = document.getElementById("resultModal");
+
+    const modalElement =
+        document.getElementById("resultModal");
 
     if (!modalElement) {
-        console.error("Result modal element not found.");
+        console.error(
+            "Result modal element not found."
+        );
         return;
     }
+
 
     /* -----------------------------------------------------
        GET MODAL ELEMENTS
@@ -1641,54 +1678,86 @@ function showResultModal(
     const modalMessage =
         document.getElementById("modalMessage");
 
-    /* Individual school block (used only for individual registrations). */
-    const individualSchool =
-        document.getElementById("individualSchoolDisplay") ||
-        modalElement.querySelector(".individual-school");
 
-    const individualSchoolLabel =
-        document.getElementById("individualSchoolLabel");
+    /* -----------------------------------------------------
+       INDIVIDUAL SCHOOL
+    ----------------------------------------------------- */
+
+    const individualSchool =
+        document.getElementById(
+            "individualSchoolDisplay"
+        ) ||
+        modalElement.querySelector(
+            ".individual-school"
+        );
 
     const individualModalSchool =
-        document.getElementById("individualModalSchool");
-
-
-    /* BULK REGISTRATION MODAL ELEMENTS */
-
-    const bulkRegistrationInfo =
-        document.getElementById("bulkRegistrationInfo");
-
-    const modalSchool =
-        document.getElementById("modalSchool");
-
-    const modalHeadcount =
-        document.getElementById("modalHeadcount");
-
-    const modalPaying =
-        document.getElementById("modalPaying");
-
-    const modalFree =
-        document.getElementById("modalFree");
+        document.getElementById(
+            "individualModalSchool"
+        );
 
 
     /* -----------------------------------------------------
-       NORMALIZE DATA
+       BULK REGISTRATION INFORMATION
+    ----------------------------------------------------- */
+
+    const bulkRegistrationInfo =
+        document.getElementById(
+            "bulkRegistrationInfo"
+        );
+
+    const modalSchool =
+        document.getElementById(
+            "modalSchool"
+        );
+
+    const modalHeadcount =
+        document.getElementById(
+            "modalHeadcount"
+        );
+
+    const modalPaying =
+        document.getElementById(
+            "modalPaying"
+        );
+
+    const modalFree =
+        document.getElementById(
+            "modalFree"
+        );
+
+
+    /* -----------------------------------------------------
+       NORMALIZE BASIC DATA
     ----------------------------------------------------- */
 
     const safeType =
-        String(type || "error").toLowerCase();
+        String(
+            type || "error"
+        ).toLowerCase();
 
     const safeStatus =
-        String(status || "TRY AGAIN");
+        String(
+            status || "TRY AGAIN"
+        );
 
     const safeName =
-        String(name || "ATTENDEE NOT IDENTIFIED");
+        String(
+            name ||
+            "ATTENDEE NOT IDENTIFIED"
+        );
 
     const safeId =
-        String(attendeeId || "NO ATTENDEE ID");
+        String(
+            attendeeId ||
+            "NO ATTENDEE ID"
+        );
 
     const safeTimestamp =
-        String(timestamp || getCurrentTimestamp());
+        String(
+            timestamp ||
+            getCurrentTimestamp()
+        );
 
     const safeMessage =
         String(
@@ -1698,7 +1767,7 @@ function showResultModal(
 
 
     /* -----------------------------------------------------
-       RESET MODAL
+       RESET MODAL STYLE
     ----------------------------------------------------- */
 
     modalElement.classList.remove(
@@ -1712,7 +1781,9 @@ function showResultModal(
        STATUS TYPE
     ----------------------------------------------------- */
 
-    if (safeType === "success") {
+    if (
+        safeType === "success"
+    ) {
 
         modalElement.classList.add(
             "modal-success"
@@ -1730,7 +1801,9 @@ function showResultModal(
 
     }
 
-    else if (safeType === "already") {
+    else if (
+        safeType === "already"
+    ) {
 
         modalElement.classList.add(
             "modal-already"
@@ -1767,63 +1840,285 @@ function showResultModal(
 
 
     /* -----------------------------------------------------
-        POPULATE ATTENDEE INFORMATION
+       POPULATE BASIC ATTENDEE INFORMATION
     ----------------------------------------------------- */
 
-    // Check if bulkInfo contains the attendee details when passed
-    const finalName = (bulkInfo && bulkInfo.name) || safeName;
-    const finalId = (bulkInfo && bulkInfo.id) || safeId;
-
     if (modalName) {
-        modalName.textContent = finalName;
+        modalName.textContent =
+            safeName;
     }
 
     if (modalId) {
-        modalId.textContent = finalId;
+        modalId.textContent =
+            safeId;
     }
 
     if (modalTime) {
-        modalTime.textContent = safeTimestamp;
+        modalTime.textContent =
+            safeTimestamp;
     }
 
     if (modalMessage) {
-        modalMessage.textContent = safeMessage || "Please try again.";
+        modalMessage.textContent =
+            safeMessage;
     }
-/* ---------------------------------------------------------
-        REGISTRATION SUMMARY CARD (BULK VS INDIVIDUAL TOGGLE)
-    --------------------------------------------------------- */
 
-    if (bulkInfo && bulkInfo.isBulk) {
-        // Show bulk UI for group/bulk scans
-        if (bulkRegistrationInfo) bulkRegistrationInfo.style.display = "block";
-        if (individualSchool) individualSchool.style.display = "none";
 
-        const resolvedSchool = resolveSchoolName(
-            bulkInfo.school || school,
-            findAttendeeById(finalId),
-            "School Not Specified"
+    /* =====================================================
+       REGISTRATION TYPE
+       
+       IMPORTANT:
+       
+       The frontend DOES NOT determine bulk status from
+       the attendee ID.
+       
+       It only trusts:
+       
+           bulkInfo.isBulk === true
+       
+       which ultimately comes from the Apps Script backend.
+    ===================================================== */
+
+    const isBulk =
+        bulkInfo &&
+        (
+            bulkInfo.isBulk === true ||
+            String(
+                bulkInfo.isBulk || ""
+            ).toLowerCase() === "true" ||
+            String(
+                bulkInfo.isBulk || ""
+            ) === "1"
         );
 
-        if (modalSchool) modalSchool.textContent = resolvedSchool;
-    } else {
-        // Hide bulk UI & show individual details for standard scans
-        if (bulkRegistrationInfo) bulkRegistrationInfo.style.display = "none";
+
+    /* =====================================================
+       ALWAYS RESET BOTH SECTIONS FIRST
+       
+       This is extremely important.
+       
+       Example:
+       
+       Scan #1 = BULK
+       → bulk summary is shown
+       
+       Scan #2 = INDIVIDUAL
+       → bulk summary MUST be hidden again
+       
+       Therefore we hide the bulk section BEFORE checking
+       whether the current scan is bulk.
+    ===================================================== */
+
+    if (bulkRegistrationInfo) {
+        bulkRegistrationInfo.style.display =
+            "none";
+    }
+
+    if (individualSchool) {
+        individualSchool.style.display =
+            "none";
+    }
+
+
+    /* =====================================================
+       BULK REGISTRATION
+    ===================================================== */
+
+    if (isBulk) {
+
+        console.log(
+            "Rendering BULK registration information:",
+            bulkInfo
+        );
+
+
+        /* -------------------------------------------------
+           SHOW BULK SUMMARY
+        ------------------------------------------------- */
+
+        if (bulkRegistrationInfo) {
+            bulkRegistrationInfo.style.display =
+                "block";
+        }
+
+
+        /* -------------------------------------------------
+           SCHOOL
+           
+           Backend data.school should be Column F.
+           
+           bulkInfo.school was created from data.school
+           during normalization.
+        ------------------------------------------------- */
+
+        const resolvedBulkSchool =
+            String(
+                bulkInfo.school ||
+                school ||
+                ""
+            ).trim();
+
+
+        if (modalSchool) {
+
+            modalSchool.textContent =
+                resolvedBulkSchool ||
+                "School Not Specified";
+        }
+
+
+        /* -------------------------------------------------
+           HEADCOUNT
+           
+           Column M
+        ------------------------------------------------- */
+
+        const headcount =
+            Number(
+                bulkInfo.headcount ??
+                0
+            );
+
+
+        if (modalHeadcount) {
+
+            modalHeadcount.textContent =
+                headcount;
+        }
+
+
+        /* -------------------------------------------------
+           PAYING PARTICIPANTS
+           
+           Column O / PAYEE
+           
+           IMPORTANT:
+           
+           DO NOT calculate:
+           
+               headcount - free
+           
+           The backend already provides PAYEE.
+        ------------------------------------------------- */
+
+        const payingParticipants =
+            Number(
+                bulkInfo.payingParticipants ??
+                0
+            );
+
+
+        if (modalPaying) {
+
+            modalPaying.textContent =
+                payingParticipants;
+        }
+
+
+        /* -------------------------------------------------
+           FREE PARTICIPANTS
+           
+           Column N
+        ------------------------------------------------- */
+
+        const freeParticipants =
+            Number(
+                bulkInfo.free ??
+                0
+            );
+
+
+        if (modalFree) {
+
+            modalFree.textContent =
+                freeParticipants;
+        }
+
+
+        /* -------------------------------------------------
+           MAKE SURE INDIVIDUAL SCHOOL IS HIDDEN
+        ------------------------------------------------- */
+
         if (individualSchool) {
-            individualSchool.style.display = "block";
-            if (individualModalSchool) {
-                const directoryRecord = finalId ? findAttendeeById(finalId) : null;
-                individualModalSchool.textContent = resolveSchoolName(
-                    school,
-                    directoryRecord,
-                    "School Not Specified"
-                );
-            }
+
+            individualSchool.style.display =
+                "none";
+        }
+
+    }
+
+
+    /* =====================================================
+       INDIVIDUAL REGISTRATION
+       
+       IMPORTANT:
+       
+       There is NO registration summary.
+       
+       Therefore:
+       
+       #bulkRegistrationInfo = hidden
+       
+       Only the individual school is displayed.
+    ===================================================== */
+
+    else {
+
+        console.log(
+            "Rendering INDIVIDUAL registration information."
+        );
+
+
+        /* -------------------------------------------------
+           BULK SUMMARY MUST REMAIN HIDDEN
+        ------------------------------------------------- */
+
+        if (bulkRegistrationInfo) {
+
+            bulkRegistrationInfo.style.display =
+                "none";
+        }
+
+
+        /* -------------------------------------------------
+           SHOW INDIVIDUAL SCHOOL
+        ------------------------------------------------- */
+
+        if (individualSchool) {
+
+            individualSchool.style.display =
+                "block";
+        }
+
+
+        /* -------------------------------------------------
+           SCHOOL MUST COME FROM THE BACKEND DATA
+           
+           data.school comes from Column F.
+           
+           The 'school' argument passed into this function
+           already comes from the normalized backend response.
+        ------------------------------------------------- */
+
+        if (individualModalSchool) {
+
+            const resolvedIndividualSchool =
+                String(
+                    school ||
+                    ""
+                ).trim();
+
+
+            individualModalSchool.textContent =
+                resolvedIndividualSchool ||
+                "School Not Specified";
         }
     }
 
-    /* -----------------------------------------------------
+
+    /* =====================================================
        SHOW MODAL
-    ----------------------------------------------------- */
+    ===================================================== */
 
     try {
 
@@ -1837,26 +2132,30 @@ function showResultModal(
                 }
             );
 
+
         modal.show();
 
-        /*
-         * Force the modal to the front.
-         * This is particularly useful on mobile browsers
-         * where scanner/video elements may create stacking
-         * contexts.
-         */
+
+        /* -------------------------------------------------
+           FORCE MODAL TO FRONT
+        ------------------------------------------------- */
 
         requestAnimationFrame(() => {
 
-            modalElement.style.zIndex = "1060";
+            modalElement.style.zIndex =
+                "1060";
+
 
             const backdrop =
                 document.querySelector(
                     ".modal-backdrop"
                 );
 
+
             if (backdrop) {
-                backdrop.style.zIndex = "1055";
+
+                backdrop.style.zIndex =
+                    "1055";
             }
 
         });
@@ -1870,11 +2169,10 @@ function showResultModal(
             error
         );
 
-        /*
-         * Fallback:
-         * If Bootstrap fails for any reason,
-         * keep the result visible in the main status panel.
-         */
+
+        /* -------------------------------------------------
+           FALLBACK
+        ------------------------------------------------- */
 
         updateStatus(
             safeType,
