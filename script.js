@@ -684,44 +684,12 @@ function processCheckIn(attendeeId) {
 
 function handleResponse(res) {
 
-    console.log(
-        "Processed result:",
-        res
-    );
+    console.log("Processed result:", res);
 
 
-    /*
-        IMPORTANT
-
-        Apps Script responses may be returned as:
-
-        1. Direct object:
-
-        {
-            status: "SUCCESS",
-            name: "CASEY JASPER CHAVEZ",
-            attendeeId: "ATT-IND-CHAVEZ1",
-            timestamp: "...",
-            message: "..."
-        }
-
-        OR:
-
-        2. Wrapped object:
-
-        {
-            found: true,
-            result: {
-                status: "SUCCESS",
-                name: "CASEY JASPER CHAVEZ",
-                attendeeId: "ATT-IND-CHAVEZ1",
-                timestamp: "...",
-                message: "..."
-            }
-        }
-
-        This normalization handles BOTH.
-    */
+    /* =====================================================
+       NORMALIZE APPS SCRIPT RESPONSE
+    ===================================================== */
 
     const data =
         res &&
@@ -730,22 +698,10 @@ function handleResponse(res) {
             ? res.result
             : res;
 
-    console.log("========== SERVER RESPONSE ==========");
-    console.log(JSON.stringify(res, null, 2));
 
-    console.log("========== DATA ==========");
-    console.log(JSON.stringify(data, null, 2));
-
-    console.log("NAME:", data.name);
-    console.log("SCHOOL:", data.school);
-    console.log("IS BULK:", data.isBulk);
-    console.log("BULK INFO:", data.bulkInfo);
-    console.log("REGISTRATION:", data.registration);
-
-
-    /* ---------------------------------------------------------
+    /* =====================================================
        INVALID RESPONSE
-    --------------------------------------------------------- */
+    ===================================================== */
 
     if (
         !data ||
@@ -757,13 +713,10 @@ function handleResponse(res) {
             res
         );
 
-
         playSound("error");
-
 
         const timestamp =
             getCurrentTimestamp();
-
 
         updateStatus(
             "error",
@@ -773,531 +726,522 @@ function handleResponse(res) {
             "The check-in server returned an invalid response."
         );
 
-
         showResultModal(
             "error",
             "TRY AGAIN",
             "",
             "",
             timestamp,
-            "The check-in server returned an invalid response."
+            "The check-in server returned an invalid response.",
+            null,
+            ""
         );
-
 
         finishProcessing();
 
         return;
-
     }
-/* ---------------------------------------------------------
-   NORMALIZE RESPONSE VALUES & PARSE SCANNER MESSAGE
---------------------------------------------------------- */
 
-const status =
-    String(
-        data.status || ""
-    )
+
+    /* =====================================================
+       BASIC RESPONSE VALUES
+    ===================================================== */
+
+    const status =
+        String(
+            data.status || ""
+        )
         .trim()
         .toUpperCase();
 
 
-const displayStatus =
-    String(
-        data.displayStatus ||
-        getDisplayStatus(status)
-    )
+    const displayStatus =
+        String(
+            data.displayStatus ||
+            getDisplayStatus(status)
+        )
         .trim();
 
 
-const rawMessage =
-    String(
-        data.message ||
-        data.text ||
-        ""
-    )
+    const rawMessage =
+        String(
+            data.message ||
+            data.text ||
+            ""
+        )
         .trim();
 
 
-/* ---------------------------------------------------------
-   1. EXTRACT NAME & ID
---------------------------------------------------------- */
+    /* =====================================================
+       NAME
+    ===================================================== */
 
-let parsedName =
-    String(
-        data.name ||
-        data.fullName ||
-        data.fullname ||
-        ""
-    )
+    let name =
+        String(
+            data.name ||
+            data.fullName ||
+            data.fullname ||
+            ""
+        )
         .trim();
 
 
-let parsedId =
-    String(
-        data.attendeeId ||
-        data.id ||
-        ""
-    )
+    /* =====================================================
+       ATTENDEE ID
+    ===================================================== */
+
+    let attendeeId =
+        String(
+            data.attendeeId ||
+            data.id ||
+            ""
+        )
         .trim();
 
 
-/* ---------------------------------------------------------
-   FALLBACK PARSER FOR OLDER SERVER RESPONSES
---------------------------------------------------------- */
+    /* =====================================================
+       FALLBACK PARSER FOR OLD RESPONSES
 
-if (
-    !parsedId ||
-    !parsedName
-) {
+       Example:
 
-    const match =
-    rawMessage.match(
-        /\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i
-    );
+       [SUCCESS] JOHN DOE (ATT-123) marked PRESENT.
+    ===================================================== */
 
-    if (match) {
+    if (
+        !name ||
+        !attendeeId
+    ) {
 
-        if (!parsedName) {
-            parsedName =
-                match[1].trim();
-        }
+        const match =
+            rawMessage.match(
+                /\[(?:SUCCESS|ALREADY|ERROR|ALREADY_PROCESSED)\]\s+(.*?)\s+\((.*?)\)/i
+            );
 
-        if (!parsedId) {
-            parsedId =
-                match[2].trim();
+
+        if (match) {
+
+            if (!name) {
+                name =
+                    match[1].trim();
+            }
+
+            if (!attendeeId) {
+                attendeeId =
+                    match[2].trim();
+            }
         }
     }
-}
 
 
-const attendeeId =
-    parsedId;
+    /* =====================================================
+       DIRECTORY FALLBACK
+    ===================================================== */
+
+    const safeAttendeeId =
+        attendeeId
+            .toUpperCase();
 
 
-const safeAttendeeId =
-    attendeeId
-        .toUpperCase();
+    const directoryRecord =
+        safeAttendeeId
+            ? findAttendeeById(
+                safeAttendeeId
+            )
+            : null;
 
 
-/* ---------------------------------------------------------
-   2. DIRECTORY FALLBACK
---------------------------------------------------------- */
+    /* =====================================================
+       FINAL NAME
 
-const directoryRecord =
-    safeAttendeeId
-        ? findAttendeeById(
-            safeAttendeeId
+       Backend has priority.
+    ===================================================== */
+
+    name =
+        String(
+            data.name ||
+            data.fullName ||
+            data.fullname ||
+            (
+                directoryRecord &&
+                directoryRecord.name
+            ) ||
+            name ||
+            ""
         )
-        : null;
-
-
-/*
- * Backend spreadsheet data has priority.
- *
- * data.name comes from Column B.
- * directoryRecord is only a fallback.
- */
-
-const name =
-    String(
-        data.name ||
-        data.fullName ||
-        data.fullname ||
-        (
-            directoryRecord &&
-            directoryRecord.name
-        ) ||
-        ""
-    )
         .trim();
 
 
-/*
- * SCHOOL MUST COME FROM THE MATCHED
- * SPREADSHEET ROW, COLUMN F.
- *
- * The backend now returns:
- *
- * data.school = Column F
- *
- * Therefore, data.school has priority.
- */
+    /* =====================================================
+       SCHOOL
 
-const school =
-    String(
-        data.school ||
-        data.schoolName ||
-        (
-            directoryRecord &&
-            directoryRecord.school
-        ) ||
-        ""
-    )
-        .trim();
+       IMPORTANT:
 
+       Backend Column F has priority.
 
-const timestamp =
-    String(
-        data.timestamp ||
-        ""
-    )
-        .trim();
+       Directory is only fallback.
+    ===================================================== */
 
-
-const message =
-    rawMessage ||
-    "No additional information was provided.";
-
-/* ---------------------------------------------------------
-   3. BULK REGISTRATION FLAG + BULK DATA
---------------------------------------------------------- */
-
-/*
- * IMPORTANT:
- *
- * The backend already tells us whether this registration
- * is bulk through:
- *
- *     data.isBulk
- *
- * and/or:
- *
- *     data.bulkInfo.isBulk
- *
- * NEVER determine bulk status from the attendee ID.
- */
-
-
-/* ---------------------------------------------------------
-   GET SERVER BULK INFO
---------------------------------------------------------- */
-
-const serverBulkInfo =
-    (
-        data &&
-        data.bulkInfo &&
-        typeof data.bulkInfo === "object"
-    )
-        ? data.bulkInfo
-        : null;
-
-
-/* ---------------------------------------------------------
-   DETERMINE BULK STATUS
---------------------------------------------------------- */
-
-const bulkFlag =
-    data.isBulk === true ||
-    String(data.isBulk || "").toLowerCase() === "true" ||
-    String(data.isBulk || "") === "1" ||
-    (
-        serverBulkInfo &&
-        (
-            serverBulkInfo.isBulk === true ||
-            String(
-                serverBulkInfo.isBulk || ""
-            ).toLowerCase() === "true" ||
-            String(
-                serverBulkInfo.isBulk || ""
-            ) === "1"
-        )
-    );
-
-
-/* ---------------------------------------------------------
-   BUILD BULK INFORMATION
---------------------------------------------------------- */
-
-let bulkInfo = null;
-
-
-if (bulkFlag) {
-
-    /*
-     * SCHOOL
-     *
-     * Backend Column F has priority.
-     */
-
-    const bulkSchool =
+    const school =
         String(
             data.school ||
             data.schoolName ||
             (
-                serverBulkInfo &&
-                serverBulkInfo.school
-            ) ||
-            (
-                data.registration &&
-                data.registration.school
+                directoryRecord &&
+                directoryRecord.school
             ) ||
             ""
-        ).trim();
+        )
+        .trim();
 
 
-    /*
-     * HEADCOUNT
-     *
-     * Column M
-     */
+    /* =====================================================
+       TIMESTAMP
+    ===================================================== */
 
-    const bulkHeadcount =
-        Number(
-            data.headcount ??
-            data.headCount ??
-            (
-                serverBulkInfo &&
-                serverBulkInfo.headcount
-            ) ??
-            (
-                data.registration &&
-                data.registration.headcount
-            ) ??
-            0
+    const timestamp =
+        String(
+            data.timestamp ||
+            ""
+        )
+        .trim();
+
+
+    /* =====================================================
+       MESSAGE
+    ===================================================== */
+
+    const message =
+        rawMessage ||
+        "No additional information was provided.";
+
+
+    /* =====================================================
+       BULK INFORMATION
+
+       IMPORTANT:
+
+       This section appears ONLY ONCE.
+
+       No attendee-ID prefix checking.
+    ===================================================== */
+
+    const serverBulkInfo =
+        data.bulkInfo &&
+        typeof data.bulkInfo === "object"
+            ? data.bulkInfo
+            : null;
+
+
+    /* =====================================================
+       DETERMINE BULK STATUS
+    ===================================================== */
+
+    const bulkFlag =
+        data.isBulk === true ||
+
+        (
+            serverBulkInfo &&
+            serverBulkInfo.isBulk === true
+        ) ||
+
+        String(
+            data.isBulk || ""
+        ).toLowerCase() === "true" ||
+
+        (
+            serverBulkInfo &&
+            String(
+                serverBulkInfo.isBulk || ""
+            ).toLowerCase() === "true"
+        ) ||
+
+        String(
+            data.isBulk || ""
+        ) === "1" ||
+
+        (
+            serverBulkInfo &&
+            String(
+                serverBulkInfo.isBulk || ""
+            ) === "1"
         );
 
 
-    /*
-     * FREE PARTICIPANTS
-     *
-     * Column N
-     */
+    /* =====================================================
+       BUILD BULK INFO
+    ===================================================== */
 
-    const bulkFree =
-        Number(
-            data.free ??
-            data.freeParticipants ??
-            (
-                serverBulkInfo &&
-                serverBulkInfo.free
-            ) ??
-            (
-                serverBulkInfo &&
-                serverBulkInfo.freeParticipants
-            ) ??
-            (
-                data.registration &&
-                data.registration.free
-            ) ??
-            0
-        );
+    let bulkInfo = null;
 
 
-    /*
-     * PAYING PARTICIPANTS
-     *
-     * Column O / PAYEE
-     *
-     * IMPORTANT:
-     *
-     * DO NOT calculate:
-     *
-     *     headcount - free
-     *
-     * We use the actual PAYEE value from Column O.
-     */
+    if (bulkFlag) {
 
-    const bulkPayee =
-        Number(
-            data.payingParticipants ??
-            data.payee ??
-            (
-                serverBulkInfo &&
-                serverBulkInfo.payingParticipants
-            ) ??
-            (
-                serverBulkInfo &&
-                serverBulkInfo.payee
-            ) ??
-            (
-                data.registration &&
-                data.registration.payee
-            ) ??
-            0
-        );
+        bulkInfo = {
+
+            isBulk: true,
 
 
-    bulkInfo = {
+            /* ---------------------------------------------
+               COLUMN F
+               SCHOOL
+            --------------------------------------------- */
 
-        isBulk: true,
+            school:
+                String(
+                    data.school ||
+                    data.schoolName ||
+                    (
+                        serverBulkInfo &&
+                        serverBulkInfo.school
+                    ) ||
+                    ""
+                )
+                .trim(),
+
+
+            /* ---------------------------------------------
+               COLUMN M
+               HEADCOUNT
+            --------------------------------------------- */
+
+            headcount:
+                Number(
+                    data.headcount ??
+                    data.headCount ??
+                    (
+                        serverBulkInfo &&
+                        serverBulkInfo.headcount
+                    ) ??
+                    (
+                        data.registration &&
+                        data.registration.headcount
+                    ) ??
+                    0
+                ),
+
+
+            /* ---------------------------------------------
+               COLUMN N
+               FREE
+            --------------------------------------------- */
+
+            free:
+                Number(
+                    data.free ??
+                    data.freeParticipants ??
+                    (
+                        serverBulkInfo &&
+                        serverBulkInfo.free
+                    ) ??
+                    (
+                        serverBulkInfo &&
+                        serverBulkInfo.freeParticipants
+                    ) ??
+                    (
+                        data.registration &&
+                        data.registration.free
+                    ) ??
+                    0
+                ),
+
+
+            /* ---------------------------------------------
+               COLUMN O
+               PAYEE
+
+               DO NOT calculate HEADCOUNT - FREE
+            --------------------------------------------- */
+
+            payingParticipants:
+                Number(
+                    data.payingParticipants ??
+                    data.payee ??
+                    (
+                        serverBulkInfo &&
+                        serverBulkInfo.payingParticipants
+                    ) ??
+                    (
+                        serverBulkInfo &&
+                        serverBulkInfo.payee
+                    ) ??
+                    (
+                        data.registration &&
+                        data.registration.payee
+                    ) ??
+                    0
+                )
+
+        };
+    }
+
+
+    /* =====================================================
+       DEBUG
+    ===================================================== */
+
+    console.log(
+        "========== SERVER RESPONSE =========="
+    );
+
+    console.log(
+        data
+    );
+
+    console.log(
+        "NAME:",
+        name
+    );
+
+    console.log(
+        "SCHOOL:",
+        school
+    );
+
+    console.log(
+        "IS BULK:",
+        bulkFlag
+    );
+
+    console.log(
+        "BULK INFO:",
+        bulkInfo
+    );
+
+
+    /* =====================================================
+       REGISTRATION OBJECT
+    ===================================================== */
+
+    const serverRegistration =
+        data.registration &&
+        typeof data.registration === "object"
+            ? data.registration
+            : {};
+
+
+    const registration = {
+
+        ...serverRegistration,
+
+        groupId:
+            attendeeId,
+
+        fullName:
+            name,
+
+        certificateName:
+            data.certificateName ||
+            serverRegistration.certificateName ||
+            "",
+
+        email:
+            data.email ||
+            serverRegistration.email ||
+            "",
+
+        contact:
+            data.contact ||
+            serverRegistration.contact ||
+            "",
 
         school:
-            bulkSchool,
+            school,
+
+        attendance:
+            data.attendanceStatus ||
+            serverRegistration.attendance ||
+            "",
+
+        attendanceTime:
+            data.attendanceTime ||
+            serverRegistration.attendanceTime ||
+            "",
+
+        amSnack:
+            data.amSnack ||
+            serverRegistration.amSnack ||
+            "",
+
+        amSnackTime:
+            data.amSnackTime ||
+            serverRegistration.amSnackTime ||
+            "",
+
+        pmSnack:
+            data.pmSnack ||
+            serverRegistration.pmSnack ||
+            "",
+
+        pmSnackTime:
+            data.pmSnackTime ||
+            serverRegistration.pmSnackTime ||
+            "",
 
         headcount:
-            bulkHeadcount,
+            bulkInfo
+                ? bulkInfo.headcount
+                : 0,
 
         free:
-            bulkFree,
+            bulkInfo
+                ? bulkInfo.free
+                : 0,
 
-        payingParticipants:
-            bulkPayee
+        payee:
+            bulkInfo
+                ? bulkInfo.payingParticipants
+                : 0
+    };
+
+
+    /* =====================================================
+       FINAL NORMALIZED RESPONSE
+    ===================================================== */
+
+    const normalizedResponse = {
+
+        status:
+            status,
+
+        displayStatus:
+            displayStatus,
+
+        name:
+            name,
+
+        attendeeId:
+            attendeeId,
+
+        school:
+            school,
+
+        timestamp:
+            timestamp,
+
+        message:
+            message,
+
+        isBulk:
+            bulkFlag,
+
+        bulkInfo:
+            bulkInfo,
+
+        registration:
+            registration
 
     };
 
-}
+
+    console.log(
+        "Normalized scan response:",
+        normalizedResponse
+    );
 
 
-/* ---------------------------------------------------------
-   DEBUG
---------------------------------------------------------- */
-
-console.log(
-    "SERVER BULK INFO:",
-    serverBulkInfo
-);
-
-console.log(
-    "BULK FLAG:",
-    bulkFlag
-);
-
-console.log(
-    "FINAL BULK INFO:",
-    bulkInfo
-);
-
-
-/* ---------------------------------------------------------
-   5. NORMALIZED REGISTRATION OBJECT
---------------------------------------------------------- */
-
-/*
- * This gives the rest of the frontend
- * one consistent object to work with.
- */
-const serverRegistration =
-    data.registration &&
-    typeof data.registration === "object"
-        ? data.registration
-        : {};
-
-const registration = {
-
-    ...serverRegistration,
-
-    groupId:
-        attendeeId,
-
-    fullName:
-        name,
-
-    certificateName:
-        data.certificateName ||
-        serverRegistration.certificateName ||
-        "",
-
-    email:
-        data.email ||
-        serverRegistration.email ||
-        "",
-
-    contact:
-        data.contact ||
-        serverRegistration.contact ||
-        "",
-
-    /* Column F */
-    school:
-        school,
-
-    attendance:
-        data.attendanceStatus ||
-        serverRegistration.attendance ||
-        "",
-
-    attendanceTime:
-        data.attendanceTime ||
-        serverRegistration.attendanceTime ||
-        "",
-
-    amSnack:
-        data.amSnack ||
-        serverRegistration.amSnack ||
-        "",
-
-    amSnackTime:
-        data.amSnackTime ||
-        serverRegistration.amSnackTime ||
-        "",
-
-    pmSnack:
-        data.pmSnack ||
-        serverRegistration.pmSnack ||
-        "",
-
-    pmSnackTime:
-        data.pmSnackTime ||
-        serverRegistration.pmSnackTime ||
-        "",
-
-    /* Column M */
-    headcount:
-        bulkInfo
-            ? bulkInfo.headcount
-            : 0,
-
-    /* Column N */
-    free:
-        bulkInfo
-            ? bulkInfo.free
-            : 0,
-
-    /* Column O / PAYEE */
-    payee:
-        bulkInfo
-            ? bulkInfo.payingParticipants
-            : 0
-};
-
-
-/* ---------------------------------------------------------
-   6. FINAL NORMALIZED RESPONSE
---------------------------------------------------------- */
-
-const normalizedResponse = {
-
-    status:
-        status,
-
-    displayStatus:
-        displayStatus,
-
-    name:
-        name,
-
-    attendeeId:
-        attendeeId,
-
-    school:
-        school,
-
-    timestamp:
-        timestamp,
-
-    message:
-        message,
-
-    isBulk:
-        bulkFlag,
-
-    bulkInfo:
-        bulkInfo,
-
-    registration:
-        registration
-
-};
-
-
-console.log(
-    "Normalized scan response:",
-    normalizedResponse
-);
-
-    /* =========================================================
+    /* =====================================================
        SUCCESS
-    ========================================================= */
+    ===================================================== */
 
     if (
         status === "SUCCESS"
@@ -1306,23 +1250,8 @@ console.log(
         playSound("success");
 
 
-        /*
-            If the backend sends the attendee name,
-            use it.
-
-            If the name is unavailable but the attendee ID
-            exists, display the attendee ID instead.
-
-            This prevents the misleading:
-
-            "ATTENDEE NOT IDENTIFIED"
-
-            message.
-        */
-
         const safeName =
             name ||
-            (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
@@ -1355,23 +1284,25 @@ console.log(
             safeMessage,
             bulkInfo,
             school
-
         );
 
 
         clearInput();
 
-
         finishProcessing();
 
         return;
-
     }
 
 
-    /* =========================================================
+    /* =====================================================
        ALREADY SCANNED
-    ========================================================= */
+
+       Supports both:
+
+       ALREADY_SCANNED
+       ALREADY_PROCESSED
+    ===================================================== */
 
     if (
         status === "ALREADY_SCANNED" ||
@@ -1383,7 +1314,6 @@ console.log(
 
         const safeName =
             name ||
-            (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
@@ -1421,17 +1351,15 @@ console.log(
 
         clearInput();
 
-
         finishProcessing();
 
         return;
-
     }
 
 
-    /* =========================================================
-       BLOCKED / VALIDATION FAILURE
-    ========================================================= */
+    /* =====================================================
+       BLOCKED
+    ===================================================== */
 
     if (
         status === "BLOCKED"
@@ -1442,7 +1370,6 @@ console.log(
 
         const safeName =
             name ||
-            (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
@@ -1473,7 +1400,7 @@ console.log(
             attendeeId,
             safeTimestamp,
             safeMessage,
-            null,
+            bulkInfo,
             school
         );
 
@@ -1481,13 +1408,12 @@ console.log(
         finishProcessing();
 
         return;
-
     }
 
 
-    /* =========================================================
+    /* =====================================================
        INVALID / UNKNOWN ERROR
-    ========================================================= */
+    ===================================================== */
 
     playSound("error");
 
@@ -1495,7 +1421,7 @@ console.log(
     const safeName =
         name ||
         attendeeId ||
-        "";
+        "ATTENDEE";
 
 
     const safeTimestamp =
@@ -1524,13 +1450,12 @@ console.log(
         attendeeId,
         safeTimestamp,
         safeMessage,
-        null,
+        bulkInfo,
         school
     );
 
 
     finishProcessing();
-
 }
 
 
