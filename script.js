@@ -38,35 +38,31 @@ const SCAN_COOLDOWN = 2500;
 let attendeeDirectory = [];
 
 function loadAttendeeDirectory() {
-    if (!DEPLOYED_WEB_APP_URL) return;
-
     fetch(DEPLOYED_WEB_APP_URL + "?action=attendees", {
         method: "GET",
         cache: "no-store",
         redirect: "follow"
     })
     .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
     })
     .then(list => {
         if (Array.isArray(list)) {
             attendeeDirectory = list.map(item => ({
-                id: String(item.groupId || item.id || item.GROUP_ID || item.attendeeId || "").trim().toUpperCase(),
+                id: String(item.groupId || item.id || item.GROUP_ID || "").trim().toUpperCase(),
                 name: String(item.fullName || item.name || item.FULL_NAME || "").trim(),
-                school: String(item.school || item.SCHOOL || item.schoolName || "").trim(),
-                headcount: Number(item.headcount ?? item.headCount ?? item.HEADCOUNT ?? 0),
-                free: Number(item.free ?? item.FREE ?? item.freeParticipants ?? 0),
-                paying: Number(item.payee ?? item.paying ?? item.PAYEE ?? item.payingParticipants ?? 0)
+                school: String(item.school || item.SCHOOL || "").trim(),
+                headcount: Number(item.headcount || item.headCount || item.HEADCOUNT || 0),
+                free: Number(item.free || item.FREE || 0),
+                paying: Number(item.payee || item.paying || item.PAYEE || 0)
             })).filter(item => item.id);
 
             console.log("Attendee directory loaded successfully:", attendeeDirectory.length);
         }
     })
     .catch(error => {
-        console.warn("Attendee directory fetch failed:", error);
+        console.warn("Attendee directory fallback unavailable:", error);
     });
 }
 
@@ -75,6 +71,8 @@ function findAttendeeById(attendeeId) {
     if (!cleanId || !Array.isArray(attendeeDirectory) || attendeeDirectory.length === 0) {
         return null;
     }
+    
+    // Exact ID match against sheet rows
     return attendeeDirectory.find(item => item.id === cleanId) || null;
 }
 
@@ -663,6 +661,7 @@ function processCheckIn(attendeeId) {
     });
 }
 
+
 /* =========================================================
    HANDLE RESPONSE
 ========================================================= */
@@ -676,7 +675,36 @@ function handleResponse(res) {
 
 
     /*
-        Apps Script responses normalization (direct vs wrapped)
+        IMPORTANT
+
+        Apps Script responses may be returned as:
+
+        1. Direct object:
+
+        {
+            status: "SUCCESS",
+            name: "CASEY JASPER CHAVEZ",
+            attendeeId: "ATT-IND-CHAVEZ1",
+            timestamp: "...",
+            message: "..."
+        }
+
+        OR:
+
+        2. Wrapped object:
+
+        {
+            found: true,
+            result: {
+                status: "SUCCESS",
+                name: "CASEY JASPER CHAVEZ",
+                attendeeId: "ATT-IND-CHAVEZ1",
+                timestamp: "...",
+                message: "..."
+            }
+        }
+
+        This normalization handles BOTH.
     */
 
     const data =
@@ -733,46 +761,46 @@ function handleResponse(res) {
         return;
 
     }
-
     
-    /* ---------------------------------------------------------
-       NORMALIZE RESPONSE VALUES & DIRECTORY LOOKUP
+/* ---------------------------------------------------------
+       NORMALIZE RESPONSE VALUES & PARSE SCANNER MESSAGE
     --------------------------------------------------------- */
 
-    const status = String(data.status || "ALREADY_SCANNED").trim().toUpperCase();
+    const status = String(data.status || "").trim().toUpperCase();
     const displayStatus = String(data.displayStatus || getDisplayStatus(status)).trim();
     const rawMessage = String(data.message || data.text || "").trim();
 
-    /* Extract Name & ID from server response or regex match */
+    /* 1. Extract Name & ID from response or raw message regex */
     let parsedName = String(data.name || data.fullName || data.fullname || "").trim();
     let parsedId = String(data.attendeeId || data.id || "").trim();
 
     if (!parsedId || !parsedName) {
-        const match = rawMessage.match(/\[(?:SUCCESS\vert{}ALREADY\vert{}ERROR\vert{}BLOCKED)\]\s+(.*?)\s+\((.*?)\)/i);
+        const match = rawMessage.match(/\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i);
         if (match) {
             if (!parsedName) parsedName = match[1].trim();
             if (!parsedId) parsedId = match[2].trim();
         }
     }
 
-    /* Fallback to lastScannedCode if repeat scan stripped the ID parameter */
+    /* Fall back to lastScannedCode if repeat scan response stripped the ID */
     const attendeeId = parsedId || lastScannedCode || "";
     const safeAttendeeId = attendeeId.toUpperCase();
 
-    /* Find matching row from loaded Google Sheets directory */
+    /* 2. Lookup exact matching record from loaded Google Sheets directory */
     const directoryRecord = safeAttendeeId ? findAttendeeById(safeAttendeeId) : null;
 
-    /* Resolve Name & School with directory fallbacks */
-    const name = (directoryRecord && directoryRecord.name) || parsedName || safeAttendeeId;
-    const school = String(data.school || data.schoolName || (directoryRecord && directoryRecord.school) || "").trim();
+    const name = parsedName || (directoryRecord && directoryRecord.name) || safeAttendeeId || "ATTENDEE";
+    const school = String(
+        data.school || 
+        data.schoolName || 
+        (directoryRecord && directoryRecord.school) || 
+        ""
+    ).trim();
 
-    const timestamp = String(data.timestamp || getCurrentTimestamp()).trim();
+    const timestamp = String(data.timestamp || "").trim();
     const message = rawMessage || "Attendance recorded successfully.";
 
-    /* ---------------------------------------------------------
-       BULK REGISTRATION INFO
-    --------------------------------------------------------- */
-
+    /* 3. Bulk Info Normalization (Dynamic counts from Sheets) */
     const bulkFlag =
         data.isBulk === true ||
         String(data.isBulk || "").toLowerCase() === "true" ||
@@ -786,15 +814,15 @@ function handleResponse(res) {
             id: safeAttendeeId,
             school: school,
             headcount: Number(
-                data.headcount ??
-                data.headCount ??
-                (directoryRecord && directoryRecord.headcount) ??
+                data.headcount ?? 
+                data.headCount ?? 
+                (directoryRecord && directoryRecord.headcount) ?? 
                 0
             ),
             free: Number(
-                data.free ??
-                data.freeParticipants ??
-                (directoryRecord && directoryRecord.free) ??
+                data.free ?? 
+                data.freeParticipants ?? 
+                (directoryRecord && directoryRecord.free) ?? 
                 0
             ),
             payingParticipants: Number(
@@ -816,19 +844,37 @@ function handleResponse(res) {
 
         playSound("success");
 
+
+        /*
+            If the backend sends the attendee name,
+            use it.
+
+            If the name is unavailable but the attendee ID
+            exists, display the attendee ID instead.
+
+            This prevents the misleading:
+
+            "ATTENDEE NOT IDENTIFIED"
+
+            message.
+        */
+
         const safeName =
             name ||
             (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
+
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
 
+
         const safeMessage =
             message ||
             "Check-in recorded successfully.";
+
 
         updateStatus(
             "success",
@@ -837,6 +883,7 @@ function handleResponse(res) {
             safeTimestamp,
             safeMessage
         );
+
 
         showResultModal(
             "success",
@@ -847,9 +894,12 @@ function handleResponse(res) {
             safeMessage,
             bulkInfo,
             school
+
         );
 
+
         clearInput();
+
 
         finishProcessing();
 
@@ -869,19 +919,23 @@ function handleResponse(res) {
 
         playSound("error");
 
+
         const safeName =
             name ||
             (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
+
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
 
+
         const safeMessage =
             message ||
             "This attendee has already been recorded.";
+
 
         updateStatus(
             "already",
@@ -890,6 +944,7 @@ function handleResponse(res) {
             safeTimestamp,
             safeMessage
         );
+
 
         showResultModal(
             "already",
@@ -902,7 +957,9 @@ function handleResponse(res) {
             school
         );
 
+
         clearInput();
+
 
         finishProcessing();
 
@@ -921,19 +978,23 @@ function handleResponse(res) {
 
         playSound("error");
 
+
         const safeName =
             name ||
             (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
+
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
 
+
         const safeMessage =
             message ||
             "This check-in cannot be processed yet.";
+
 
         updateStatus(
             "error",
@@ -943,6 +1004,7 @@ function handleResponse(res) {
             safeMessage
         );
 
+
         showResultModal(
             "error",
             "TRY AGAIN",
@@ -950,9 +1012,10 @@ function handleResponse(res) {
             attendeeId,
             safeTimestamp,
             safeMessage,
-            bulkInfo, // Retain bulkInfo on BLOCKED so counts are displayed
+            null,
             school
         );
+
 
         finishProcessing();
 
@@ -967,18 +1030,22 @@ function handleResponse(res) {
 
     playSound("error");
 
+
     const safeName =
         name ||
         attendeeId ||
         "";
 
+
     const safeTimestamp =
         timestamp ||
         getCurrentTimestamp();
 
+
     const safeMessage =
         message ||
         "Unable to process this check-in. Please try again.";
+
 
     updateStatus(
         "error",
@@ -988,6 +1055,7 @@ function handleResponse(res) {
         safeMessage
     );
 
+
     showResultModal(
         "error",
         "TRY AGAIN",
@@ -995,9 +1063,10 @@ function handleResponse(res) {
         attendeeId,
         safeTimestamp,
         safeMessage,
-        bulkInfo,
+        null,
         school
     );
+
 
     finishProcessing();
 
@@ -1032,10 +1101,13 @@ function handleError(error) {
         error
     );
 
+
     playSound("error");
+
 
     const timestamp =
         getCurrentTimestamp();
+
 
     updateStatus(
         "error",
@@ -1045,6 +1117,7 @@ function handleError(error) {
         "Unable to communicate with the check-in server. Please try again."
     );
 
+
     showResultModal(
         "error",
         "TRY AGAIN",
@@ -1053,6 +1126,7 @@ function handleError(error) {
         timestamp,
         "Unable to communicate with the check-in server. Please try again."
     );
+
 
     finishProcessing();
 
@@ -1075,8 +1149,10 @@ function updateStatus(
         return;
     }
 
+
     statusBox.className =
         `result-panel ${type}`;
+
 
     if (resultTitle) {
 
@@ -1086,6 +1162,7 @@ function updateStatus(
 
     }
 
+
     if (resultName) {
 
         resultName.textContent =
@@ -1093,6 +1170,7 @@ function updateStatus(
             "No attendee scanned";
 
     }
+
 
     if (resultTime) {
 
@@ -1102,6 +1180,7 @@ function updateStatus(
 
     }
 
+
     if (resultMessage) {
 
         resultMessage.textContent =
@@ -1109,6 +1188,7 @@ function updateStatus(
             "Select a station and scan an attendee QR code.";
 
     }
+
 
     updateResultIcon(type);
 
@@ -1125,17 +1205,21 @@ function updateResultIcon(type) {
         return;
     }
 
+
     const icon =
         statusBox.querySelector(
             ".result-icon i"
         );
 
+
     if (!icon) {
         return;
     }
 
+
     icon.className =
         "bi";
+
 
     if (
         type === "success"
@@ -1147,6 +1231,7 @@ function updateResultIcon(type) {
 
     }
 
+
     else if (
         type === "already"
     ) {
@@ -1156,6 +1241,7 @@ function updateResultIcon(type) {
         );
 
     }
+
 
     else if (
         type === "error"
@@ -1167,6 +1253,7 @@ function updateResultIcon(type) {
 
     }
 
+
     else {
 
         icon.classList.add(
@@ -1176,6 +1263,7 @@ function updateResultIcon(type) {
     }
 
 }
+
 
 /* =========================================================
    RESULT MODAL
