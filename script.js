@@ -79,6 +79,24 @@ function findAttendeeById(attendeeId) {
     }) || null;
 }
 
+function resolveSchoolName(rawSchool, directoryRecord, fallback = "School Not Specified") {
+    const directSchool = String(rawSchool || "").trim();
+    if (directSchool) {
+        return directSchool;
+    }
+
+    const directorySchool = directoryRecord ? String(directoryRecord.school || "").trim() : "";
+    if (directorySchool) {
+        return directorySchool;
+    }
+
+    if (fallback) {
+        return fallback;
+    }
+
+    return "";
+}
+
 
 /* =========================================================
    DOM ELEMENTS
@@ -791,7 +809,11 @@ function handleResponse(res) {
     const directoryRecord = safeAttendeeId ? findAttendeeById(safeAttendeeId) : null;
 
     const name = parsedName || (directoryRecord && directoryRecord.name) || "";
-    const school = String(data.school || data.schoolName || (directoryRecord && directoryRecord.school) || "").trim();
+    const school = resolveSchoolName(
+        data.school || data.schoolName,
+        directoryRecord,
+        "School Not Specified"
+    );
     const timestamp = String(data.timestamp || "").trim();
     const message = rawMessage || "No additional information was provided.";
 
@@ -805,7 +827,11 @@ function handleResponse(res) {
     const bulkInfo = bulkFlag
         ? {
             isBulk: true,
-            school: school || (directoryRecord && directoryRecord.school) || "MEOWMEOW UNIVERSITY",
+            school: resolveSchoolName(
+                data.school || data.schoolName || (directoryRecord && directoryRecord.school),
+                directoryRecord,
+                "School Not Specified"
+            ),
             headcount: Number(data.headcount ?? data.headCount ?? 151),
             free: Number(data.free ?? data.freeParticipants ?? 5),
             payingParticipants: Number(
@@ -1453,9 +1479,8 @@ function showResultModal(
         modalTime.textContent = safeTimestamp;
     }
 
-    /* Force the success message to clean string */
     if (modalMessage) {
-        modalMessage.textContent = "Attendance recorded successfully.";
+        modalMessage.textContent = safeMessage || "Please try again.";
     }
 /* ---------------------------------------------------------
         REGISTRATION SUMMARY CARD (BULK VS INDIVIDUAL TOGGLE)
@@ -1479,11 +1504,11 @@ function showResultModal(
                 ? findAttendeeById(finalId)
                 : null;
 
-        const resolvedSchool =
-            bulkInfo.school ||
-            school ||
-            (directoryRecordForSchool && directoryRecordForSchool.school) ||
-            "Not Specified";
+        const resolvedSchool = resolveSchoolName(
+            bulkInfo.school || school,
+            directoryRecordForSchool,
+            "School Not Specified"
+        );
 
         if (modalSchool) modalSchool.textContent = resolvedSchool;
         if (modalHeadcount) modalHeadcount.textContent = Number(bulkInfo.headcount || 0).toLocaleString();
@@ -1497,14 +1522,15 @@ function showResultModal(
             individualSchool.style.display = "block";
             if (individualModalSchool) {
                 const directoryRecord = finalId ? findAttendeeById(finalId) : null;
-                individualModalSchool.textContent =
-                    school ||
-                    (directoryRecord && directoryRecord.school) ||
-                    "Not Specified";
+                individualModalSchool.textContent = resolveSchoolName(
+                    school,
+                    directoryRecord,
+                    "School Not Specified"
+                );
             }
         }
     }
-    
+
     /* -----------------------------------------------------
        SHOW MODAL
     ----------------------------------------------------- */
