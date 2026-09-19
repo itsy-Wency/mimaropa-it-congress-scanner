@@ -2442,18 +2442,22 @@ function processManualOverride() {
     }
 
     fetch(DEPLOYED_WEB_APP_URL, {
-        method: "POST",
-        redirect: "follow",
-        headers: {
-            "Content-Type": "text/plain;charset=utf-8"
-        },
-        body: JSON.stringify({
-            action: "manualOverride",
-            attendeeId: attendeeId,
-            session: session,
-            pin: pin
-        })
+
+    method: "POST",
+
+    redirect: "follow",
+
+    headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+    },
+
+    body: JSON.stringify({
+        action: "scan",
+        attendeeId: attendeeId,
+        session: selectedSession
     })
+
+})
     .then(response => {
         if (!response.ok) {
             throw new Error(`HTTP Server Error ${response.status}`);
