@@ -774,78 +774,393 @@ function handleResponse(res) {
 
     }
 /* ---------------------------------------------------------
-       NORMALIZE RESPONSE VALUES & PARSE SCANNER MESSAGE
-    --------------------------------------------------------- */
+   NORMALIZE RESPONSE VALUES & PARSE SCANNER MESSAGE
+--------------------------------------------------------- */
 
-    const status = String(data.status || "").trim().toUpperCase();
-    const displayStatus = String(data.displayStatus || getDisplayStatus(status)).trim();
-    const rawMessage = String(data.message || data.text || "").trim();
+const status =
+    String(
+        data.status || ""
+    )
+        .trim()
+        .toUpperCase();
 
-    /* 1. Extract Name & ID from raw message if server didn't split them */
-    let parsedName = String(data.name || data.fullName || data.fullname || "").trim();
-    let parsedId = String(data.attendeeId || data.id || "").trim();
 
-    // Regex match for formats like: "[SUCCESS] NAME (ATT-ID) marked PRESENT."
-    if (!parsedId || !parsedName) {
-        const match = rawMessage.match(/\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i);
-        if (match) {
-            if (!parsedName) parsedName = match[1].trim();
-            if (!parsedId) parsedId = match[2].trim();
+const displayStatus =
+    String(
+        data.displayStatus ||
+        getDisplayStatus(status)
+    )
+        .trim();
+
+
+const rawMessage =
+    String(
+        data.message ||
+        data.text ||
+        ""
+    )
+        .trim();
+
+
+/* ---------------------------------------------------------
+   1. EXTRACT NAME & ID
+--------------------------------------------------------- */
+
+let parsedName =
+    String(
+        data.name ||
+        data.fullName ||
+        data.fullname ||
+        ""
+    )
+        .trim();
+
+
+let parsedId =
+    String(
+        data.attendeeId ||
+        data.id ||
+        ""
+    )
+        .trim();
+
+
+/*
+ * Fallback parser for older server responses such as:
+ *
+ * [SUCCESS] JOHN DOE (ATT-IND-001) marked PRESENT.
+ */
+
+if (
+    !parsedId ||
+    !parsedName
+) {
+
+    const match =
+        rawMessage.match(
+            /\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i
+        );
+
+
+    if (match) {
+
+        if (!parsedName) {
+
+            parsedName =
+                match[1].trim();
+
         }
+
+
+        if (!parsedId) {
+
+            parsedId =
+                match[2].trim();
+
+        }
+
     }
 
-    const attendeeId = parsedId;
-    const safeAttendeeId = attendeeId.toUpperCase();
+}
 
-    /* 2. Lookup Directory Record using extracted ID */
-    const directoryRecord = safeAttendeeId ? findAttendeeById(safeAttendeeId) : null;
 
-    const name = parsedName || (directoryRecord && directoryRecord.name) || "";
-    const school = resolveSchoolName(
-        data.school || data.schoolName,
-        directoryRecord,
-        "School Not Specified"
-    );
-    const timestamp = String(data.timestamp || "").trim();
-    const message = rawMessage || "No additional information was provided.";
+const attendeeId =
+    parsedId;
 
-    /* 3. Bulk Info Normalization & Fallbacks */
-    const bulkFlag =
-        data.isBulk === true ||
-        String(data.isBulk || "").toLowerCase() === "true" ||
-        String(data.isBulk || "") === "1" ||
-        safeAttendeeId.startsWith("ATT-BLK-");
 
-    const bulkInfo = bulkFlag
+const safeAttendeeId =
+    attendeeId
+        .toUpperCase();
+
+
+/* ---------------------------------------------------------
+   2. DIRECTORY FALLBACK
+--------------------------------------------------------- */
+
+const directoryRecord =
+    safeAttendeeId
+        ? findAttendeeById(
+            safeAttendeeId
+        )
+        : null;
+
+
+/*
+ * Backend spreadsheet data has priority.
+ *
+ * data.name comes from Column B.
+ * directoryRecord is only a fallback.
+ */
+
+const name =
+    String(
+        data.name ||
+        data.fullName ||
+        data.fullname ||
+        (
+            directoryRecord &&
+            directoryRecord.name
+        ) ||
+        ""
+    )
+        .trim();
+
+
+/*
+ * SCHOOL MUST COME FROM THE MATCHED
+ * SPREADSHEET ROW, COLUMN F.
+ *
+ * The backend now returns:
+ *
+ * data.school = Column F
+ *
+ * Therefore, data.school has priority.
+ */
+
+const school =
+    String(
+        data.school ||
+        data.schoolName ||
+        (
+            directoryRecord &&
+            directoryRecord.school
+        ) ||
+        ""
+    )
+        .trim();
+
+
+const timestamp =
+    String(
+        data.timestamp ||
+        ""
+    )
+        .trim();
+
+
+const message =
+    rawMessage ||
+    "No additional information was provided.";
+
+
+/* ---------------------------------------------------------
+   3. BULK REGISTRATION FLAG
+--------------------------------------------------------- */
+
+/*
+ * IMPORTANT:
+ *
+ * Do NOT determine bulk status from the
+ * attendee ID prefix.
+ *
+ * The Apps Script tells us whether the
+ * matched spreadsheet row belongs to
+ * Group_Bulk Attendees.
+ */
+
+const bulkFlag =
+    data.isBulk === true ||
+    String(
+        data.isBulk || ""
+    )
+        .toLowerCase() === "true" ||
+    String(
+        data.isBulk || ""
+    ) === "1";
+
+
+/* ---------------------------------------------------------
+   4. BULK REGISTRATION DATA
+--------------------------------------------------------- */
+
+/*
+ * Individual registrations:
+ *
+ * bulkInfo = null
+ *
+ * Therefore, the frontend MUST NOT show
+ * the registration summary cards.
+ */
+
+const bulkInfo =
+    bulkFlag
         ? {
+
             isBulk: true,
-            school: resolveSchoolName(
-                data.school || data.schoolName || (directoryRecord && directoryRecord.school),
-                directoryRecord,
-                "School Not Specified"
-            ),
-            headcount: Number(data.headcount ?? data.headCount ?? 0),
-            free: Number(data.free ?? data.freeParticipants ?? 0),
-            payingParticipants: Number(
-                data.payingParticipants ??
-                data.paying ??
-                Math.max(Number(data.headcount ?? 0) - Number(data.free ?? 0), 0)
-            )
+
+            /*
+             * Column F
+             */
+            school:
+                String(
+                    data.school ||
+                    data.schoolName ||
+                    ""
+                )
+                    .trim(),
+
+            /*
+             * Column M
+             */
+            headcount:
+                Number(
+                    data.headcount ??
+                    data.headCount ??
+                    (
+                        data.registration &&
+                        data.registration.headcount
+                    ) ??
+                    0
+                ),
+
+            /*
+             * Column N
+             */
+            free:
+                Number(
+                    data.free ??
+                    data.freeParticipants ??
+                    (
+                        data.registration &&
+                        data.registration.free
+                    ) ??
+                    0
+                ),
+
+            /*
+             * Column O
+             *
+             * PAYEE is already stored in
+             * the spreadsheet.
+             *
+             * DO NOT calculate:
+             *
+             * HEADCOUNT - FREE
+             */
+            payingParticipants:
+                Number(
+                    data.payingParticipants ??
+                    data.payee ??
+                    (
+                        data.registration &&
+                        data.registration.payee
+                    ) ??
+                    0
+                )
+
         }
         : null;
 
-    console.log(
-        "Normalized scan response:",
-        {
-            status: status,
-            displayStatus: displayStatus,
-            name: name,
-            attendeeId: attendeeId,
-            timestamp: timestamp,
-            message: message,
-            bulkInfo: bulkInfo
-        }
-    );
+
+/* ---------------------------------------------------------
+   5. NORMALIZED REGISTRATION OBJECT
+--------------------------------------------------------- */
+
+/*
+ * This gives the rest of the frontend
+ * one consistent object to work with.
+ */
+
+const registration =
+    data.registration || {
+
+        groupId:
+            attendeeId,
+
+        fullName:
+            name,
+
+        certificateName:
+            data.certificateName || "",
+
+        email:
+            data.email || "",
+
+        contact:
+            data.contact || "",
+
+        school:
+            school,
+
+        attendance:
+            data.attendanceStatus || "",
+
+        attendanceTime:
+            data.attendanceTime || "",
+
+        amSnack:
+            data.amSnack || "",
+
+        amSnackTime:
+            data.amSnackTime || "",
+
+        pmSnack:
+            data.pmSnack || "",
+
+        pmSnackTime:
+            data.pmSnackTime || "",
+
+        headcount:
+            bulkInfo
+                ? bulkInfo.headcount
+                : 0,
+
+        free:
+            bulkInfo
+                ? bulkInfo.free
+                : 0,
+
+        payee:
+            bulkInfo
+                ? bulkInfo.payingParticipants
+                : 0
+
+    };
+
+
+/* ---------------------------------------------------------
+   6. FINAL NORMALIZED RESPONSE
+--------------------------------------------------------- */
+
+const normalizedResponse = {
+
+    status:
+        status,
+
+    displayStatus:
+        displayStatus,
+
+    name:
+        name,
+
+    attendeeId:
+        attendeeId,
+
+    school:
+        school,
+
+    timestamp:
+        timestamp,
+
+    message:
+        message,
+
+    isBulk:
+        bulkFlag,
+
+    bulkInfo:
+        bulkInfo,
+
+    registration:
+        registration
+
+};
+
+
+console.log(
+    "Normalized scan response:",
+    normalizedResponse
+);
 
     /* =========================================================
        SUCCESS
