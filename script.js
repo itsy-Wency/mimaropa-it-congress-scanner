@@ -52,13 +52,9 @@ function loadAttendeeDirectory() {
     .then(list => {
         if (Array.isArray(list)) {
             attendeeDirectory = list.map(item => ({
-                id: String(item.id || item.groupId || "").trim().toUpperCase(),
-                name: String(item.name || item.fullName || "").trim(),
-                school: String(item.school || "").trim(),
-                // Map the dynamic bulk counts directly from Google Sheet columns
-                headcount: Number(item.headcount ?? item.headCount ?? 0),
-                free: Number(item.free ?? item.freeParticipants ?? 0),
-                paying: Number(item.payee ?? item.paying ?? item.payingParticipants ?? 0)
+                id: String(item.id || "").trim().toUpperCase(),
+                name: String(item.name || "").trim(),
+                school: String(item.school || "").trim()
             })).filter(item => item.id);
 
             console.log("Attendee directory loaded:", attendeeDirectory.length);
@@ -479,7 +475,6 @@ function getCameraErrorMessage(error) {
 
 }
 
-
 /* =========================================================
    QR SUCCESS
 ========================================================= */
@@ -768,7 +763,6 @@ function handleResponse(res) {
         return;
 
     }
-    
 /* ---------------------------------------------------------
        NORMALIZE RESPONSE VALUES & PARSE SCANNER MESSAGE
     --------------------------------------------------------- */
