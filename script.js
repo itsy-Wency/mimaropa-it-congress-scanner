@@ -507,25 +507,81 @@ function handleQrSuccess(decodedText) {
     lastScannedCode = decodedText;
     lastScanTime = now;
 
-    // --- ADD REGEX EXTRACTION HERE ---
-    let attendeeId = String(decodedText).trim();
 
-    // Extract ID inside parentheses if present (e.g., ATT-BLK-CATANGLAO2)
-    const match = attendeeId.match(/\((.*?)\)/);
-    if (match && match[1]) {
-        attendeeId = match[1].trim().toUpperCase();
-    } else {
-        attendeeId = attendeeId.toUpperCase();
+    // ---------------------------------------------------------
+    // GET ATTENDEE ID FROM QR CODE
+    // ---------------------------------------------------------
+
+    let attendeeId =
+        String(decodedText || "").trim();
+
+
+    // Extract ID inside parentheses if present
+    // Example:
+    // "MARIA RIVERA (ATT-BLK-RIVERA2)"
+    //
+    // Result:
+    // "ATT-BLK-RIVERA2"
+
+    const match =
+        attendeeId.match(/\((.*?)\)/);
+
+
+    if (
+        match &&
+        match[1]
+    ) {
+
+        attendeeId =
+            match[1]
+                .trim()
+                .toUpperCase();
+
     }
-    // ---------------------------------
+
+    else {
+
+        attendeeId =
+            attendeeId
+                .toUpperCase();
+
+    }
+
+
+    // ---------------------------------------------------------
+    // VALIDATE
+    // ---------------------------------------------------------
 
     if (!attendeeId) {
         return;
     }
 
+
+    // ---------------------------------------------------------
+    // PUT ID INTO SEARCH INPUT
+    // ---------------------------------------------------------
+
     if (searchInput) {
-        searchInput.value = attendeeId;
+
+        searchInput.value =
+            attendeeId;
+
     }
+
+
+    // ---------------------------------------------------------
+    // NORMAL QR CHECK-IN
+    // ---------------------------------------------------------
+
+    console.log(
+        "QR CODE DETECTED:",
+        attendeeId
+    );
+
+    console.log(
+        "CALLING processCheckIn(), NOT processManualOverride()"
+    );
+
 
     processCheckIn(attendeeId);
 }
@@ -592,39 +648,25 @@ function submitManualId() {
    PROCESS CHECK-IN
 ========================================================= */
 function processCheckIn(attendeeId) {
-    if (isProcessing) {
-        return;
-    }
 
-    const session = getSelectedStation();
+    console.log("✅ processCheckIn() CALLED:", attendeeId);
+    const selectedSession = getSelectedStation();
 
-    if (!session) {
-        updateStatus(
-            "error",
-            "TRY AGAIN",
-            "",
-            "",
-            "Please select a check-in station."
-        );
-        return;
-    }
-
-    isProcessing = true;
-    setProcessingState(true);
-
-    updateStatus(
-        "idle",
-        "VERIFYING",
-        "",
-        "",
-        `Checking ${attendeeId}...`
-    );
-
-    const payload = {
-        action: "manualOverride",
+    console.log("QR SCAN REQUEST:", {
+        action: "scan",
         attendeeId: attendeeId,
-        session: session
-    };
+        session: selectedSession
+    });
+
+    if (!attendeeId) {
+        console.error("No attendee ID supplied.");
+        return;
+    }
+
+    if (!selectedSession) {
+        console.error("No station selected.");
+        return;
+    }
 
     fetch(DEPLOYED_WEB_APP_URL, {
         method: "POST",
@@ -632,20 +674,30 @@ function processCheckIn(attendeeId) {
         headers: {
             "Content-Type": "text/plain;charset=utf-8"
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+            action: "scan",
+            attendeeId: attendeeId,
+            session: selectedSession
+        })
     })
     .then(response => {
         if (!response.ok) {
             throw new Error(`HTTP Server Error ${response.status}`);
         }
+
         return response.text();
     })
     .then(text => {
+
         console.log("Apps Script response:", text);
 
-        // Catch Google Apps Script HTML error pages before JSON parsing fails
-        if (text.trim().startsWith("<!DOCTYPE") || text.includes("<html")) {
-            throw new Error("Server execution timeout. Please tap scan again.");
+        if (
+            text.trim().startsWith("<!DOCTYPE") ||
+            text.includes("<html")
+        ) {
+            throw new Error(
+                "Server execution timeout. Please try again."
+            );
         }
 
         let result;
@@ -654,29 +706,43 @@ function processCheckIn(attendeeId) {
             result = JSON.parse(text);
         } catch (error) {
             console.error("JSON parsing failed:", error);
-            throw new Error("Invalid response format received from server.");
+            throw new Error(
+                "Invalid response format received from server."
+            );
         }
 
         handleResponse(result);
     })
     .catch(error => {
-        console.error("Check-in request failed:", error);
-        
-        // Pass the actual message to the UI instead of falling back to generic text
+
+        console.error(
+            "Check-in request failed:",
+            error
+        );
+
+        const timestamp =
+            typeof getCurrentTimestamp === "function"
+                ? getCurrentTimestamp()
+                : "";
+
         updateStatus(
             "error",
-            "CONNECTION ERROR",
+            "TRY AGAIN",
             "",
-            typeof getCurrentTimestamp === "function" ? getCurrentTimestamp() : "",
-            error.message || "Unable to communicate with the check-in server."
+            timestamp,
+            error.message || "Unable to process scan."
         );
-    })
-    .finally(() => {
-        isProcessing = false;
-        setProcessingState(false);
+
+        showResultModal(
+            "error",
+            "TRY AGAIN",
+            "",
+            attendeeId,
+            timestamp,
+            error.message || "Unable to process scan."
+        );
     });
 }
-
 
 /* =========================================================
    HANDLE RESPONSE
@@ -2409,6 +2475,8 @@ function openOverrideModal() {
    PROCESS MANUAL OVERRIDE
 ========================================================= */
 function processManualOverride() {
+    console.trace("⚠️ processManualOverride() WAS CALLED");
+
     const attendeeId = overrideAttendeeId
         ? overrideAttendeeId.value.trim().toUpperCase()
         : "";
