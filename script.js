@@ -81,20 +81,12 @@ function findAttendeeById(attendeeId) {
 
 function resolveSchoolName(rawSchool, directoryRecord, fallback = "School Not Specified") {
     const directSchool = String(rawSchool || "").trim();
-    if (directSchool) {
-        return directSchool;
-    }
+    if (directSchool) return directSchool;
 
     const directorySchool = directoryRecord ? String(directoryRecord.school || "").trim() : "";
-    if (directorySchool) {
-        return directorySchool;
-    }
+    if (directorySchool) return directorySchool;
 
-    if (fallback) {
-        return fallback;
-    }
-
-    return "";
+    return fallback || "";
 }
 
 
@@ -832,12 +824,12 @@ function handleResponse(res) {
                 directoryRecord,
                 "School Not Specified"
             ),
-            headcount: Number(data.headcount ?? data.headCount ?? 151),
-            free: Number(data.free ?? data.freeParticipants ?? 5),
+            headcount: Number(data.headcount ?? data.headCount ?? 0),
+            free: Number(data.free ?? data.freeParticipants ?? 0),
             payingParticipants: Number(
                 data.payingParticipants ??
                 data.paying ??
-                (data.headcount ? Math.max(Number(data.headcount) - Number(data.free || 0), 0) : 146)
+                Math.max(Number(data.headcount ?? 0) - Number(data.free ?? 0), 0)
             )
         }
         : null;
@@ -1491,30 +1483,13 @@ function showResultModal(
         if (bulkRegistrationInfo) bulkRegistrationInfo.style.display = "block";
         if (individualSchool) individualSchool.style.display = "none";
 
-        const bulkSchoolLabel = bulkRegistrationInfo
-            ? bulkRegistrationInfo.querySelector(".bulk-school .bulk-label")
-            : null;
-
-        if (bulkSchoolLabel) {
-            bulkSchoolLabel.textContent = "SCHOOL / ORGANIZATION";
-        }
-
-        const directoryRecordForSchool =
-            finalId && finalId !== "NO ATTENDEE ID" && finalId !== "ATTENDEE"
-                ? findAttendeeById(finalId)
-                : null;
-
         const resolvedSchool = resolveSchoolName(
             bulkInfo.school || school,
-            directoryRecordForSchool,
+            findAttendeeById(finalId),
             "School Not Specified"
         );
 
         if (modalSchool) modalSchool.textContent = resolvedSchool;
-        if (modalHeadcount) modalHeadcount.textContent = Number(bulkInfo.headcount || 0).toLocaleString();
-        if (modalPaying) modalPaying.textContent = Number(bulkInfo.payingParticipants || bulkInfo.paying || 0).toLocaleString();
-        if (modalFree) modalFree.textContent = Number(bulkInfo.free || 0).toLocaleString();
-
     } else {
         // Hide bulk UI & show individual details for standard scans
         if (bulkRegistrationInfo) bulkRegistrationInfo.style.display = "none";
