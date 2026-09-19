@@ -731,6 +731,21 @@ function handleResponse(res) {
             : res;
 
 
+    /* DEBUG */
+    console.log("========== RAW SERVER RESPONSE ==========");
+    console.log(res);
+
+    console.log("========== UNWRAPPED DATA ==========");
+    console.log(data);
+
+    console.log("SERVER isBulk:", data.isBulk);
+    console.log("SERVER school:", data.school);
+    console.log("SERVER bulkInfo:", data.bulkInfo);
+    console.log("SERVER registration:", data.registration);
+    console.log("SERVER name:", data.name);
+    console.log("SERVER attendeeId:", data.attendeeId);
+
+
     /* ---------------------------------------------------------
        INVALID RESPONSE
     --------------------------------------------------------- */
