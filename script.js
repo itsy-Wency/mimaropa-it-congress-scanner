@@ -1257,8 +1257,9 @@ function handleResponse(res) {
 
 
         const safeTimestamp =
-            timestamp ||
-            getCurrentTimestamp();
+        formatModalTimestamp(
+            timestamp || getCurrentTimestamp()
+        );
 
 
         const safeMessage =
@@ -2952,6 +2953,33 @@ function playSound(type) {
 
 }
 
+/* =========================================================
+   FORMAT MODAL TIMESTAMP
+========================================================= */
+
+function formatModalTimestamp(timestamp) {
+
+    if (!timestamp) {
+        return "";
+    }
+
+    const date = new Date(timestamp);
+
+    if (isNaN(date.getTime())) {
+        return String(timestamp);
+    }
+
+    return new Intl.DateTimeFormat("en-PH", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true
+    }).format(date).replace(" at ", " • ");
+}
 
 /* =========================================================
    CURRENT TIMESTAMP FALLBACK
