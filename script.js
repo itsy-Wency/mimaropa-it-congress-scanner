@@ -730,20 +730,17 @@ function handleResponse(res) {
             ? res.result
             : res;
 
+    console.log("========== SERVER RESPONSE ==========");
+    console.log(JSON.stringify(res, null, 2));
 
-    /* DEBUG */
-    console.log("========== RAW SERVER RESPONSE ==========");
-    console.log(res);
+    console.log("========== DATA ==========");
+    console.log(JSON.stringify(data, null, 2));
 
-    console.log("========== UNWRAPPED DATA ==========");
-    console.log(data);
-
-    console.log("SERVER isBulk:", data.isBulk);
-    console.log("SERVER school:", data.school);
-    console.log("SERVER bulkInfo:", data.bulkInfo);
-    console.log("SERVER registration:", data.registration);
-    console.log("SERVER name:", data.name);
-    console.log("SERVER attendeeId:", data.attendeeId);
+    console.log("NAME:", data.name);
+    console.log("SCHOOL:", data.school);
+    console.log("IS BULK:", data.isBulk);
+    console.log("BULK INFO:", data.bulkInfo);
+    console.log("REGISTRATION:", data.registration);
 
 
     /* ---------------------------------------------------------
