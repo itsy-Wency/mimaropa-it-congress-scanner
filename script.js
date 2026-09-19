@@ -663,7 +663,6 @@ function processCheckIn(attendeeId) {
     });
 }
 
-
 /* =========================================================
    HANDLE RESPONSE
 ========================================================= */
@@ -677,36 +676,7 @@ function handleResponse(res) {
 
 
     /*
-        IMPORTANT
-
-        Apps Script responses may be returned as:
-
-        1. Direct object:
-
-        {
-            status: "SUCCESS",
-            name: "CASEY JASPER CHAVEZ",
-            attendeeId: "ATT-IND-CHAVEZ1",
-            timestamp: "...",
-            message: "..."
-        }
-
-        OR:
-
-        2. Wrapped object:
-
-        {
-            found: true,
-            result: {
-                status: "SUCCESS",
-                name: "CASEY JASPER CHAVEZ",
-                attendeeId: "ATT-IND-CHAVEZ1",
-                timestamp: "...",
-                message: "..."
-            }
-        }
-
-        This normalization handles BOTH.
+        Apps Script responses normalization (direct vs wrapped)
     */
 
     const data =
@@ -763,8 +733,9 @@ function handleResponse(res) {
         return;
 
     }
+
     
-/* ---------------------------------------------------------
+    /* ---------------------------------------------------------
        NORMALIZE RESPONSE VALUES & DIRECTORY LOOKUP
     --------------------------------------------------------- */
 
@@ -777,7 +748,7 @@ function handleResponse(res) {
     let parsedId = String(data.attendeeId || data.id || "").trim();
 
     if (!parsedId || !parsedName) {
-        const match = rawMessage.match(/\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i);
+        const match = rawMessage.match(/\[(?:SUCCESS\vert{}ALREADY\vert{}ERROR\vert{}BLOCKED)\]\s+(.*?)\s+\((.*?)\)/i);
         if (match) {
             if (!parsedName) parsedName = match[1].trim();
             if (!parsedId) parsedId = match[2].trim();
@@ -791,9 +762,9 @@ function handleResponse(res) {
     /* Find matching row from loaded Google Sheets directory */
     const directoryRecord = safeAttendeeId ? findAttendeeById(safeAttendeeId) : null;
 
-    /* Resolve Name & School strictly from Google Sheet directory */
+    /* Resolve Name & School with directory fallbacks */
     const name = (directoryRecord && directoryRecord.name) || parsedName || safeAttendeeId;
-    const school = (directoryRecord && directoryRecord.school) || String(data.school || data.schoolName || "").trim();
+    const school = String(data.school || data.schoolName || (directoryRecord && directoryRecord.school) || "").trim();
 
     const timestamp = String(data.timestamp || getCurrentTimestamp()).trim();
     const message = rawMessage || "Attendance recorded successfully.";
@@ -815,21 +786,21 @@ function handleResponse(res) {
             id: safeAttendeeId,
             school: school,
             headcount: Number(
-                (directoryRecord && directoryRecord.headcount) ??
                 data.headcount ??
                 data.headCount ??
+                (directoryRecord && directoryRecord.headcount) ??
                 0
             ),
             free: Number(
-                (directoryRecord && directoryRecord.free) ??
                 data.free ??
                 data.freeParticipants ??
+                (directoryRecord && directoryRecord.free) ??
                 0
             ),
             payingParticipants: Number(
-                (directoryRecord && directoryRecord.paying) ??
                 data.payingParticipants ??
                 data.paying ??
+                (directoryRecord && directoryRecord.paying) ??
                 0
             )
         }
@@ -845,37 +816,19 @@ function handleResponse(res) {
 
         playSound("success");
 
-
-        /*
-            If the backend sends the attendee name,
-            use it.
-
-            If the name is unavailable but the attendee ID
-            exists, display the attendee ID instead.
-
-            This prevents the misleading:
-
-            "ATTENDEE NOT IDENTIFIED"
-
-            message.
-        */
-
         const safeName =
             name ||
             (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
-
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
 
-
         const safeMessage =
             message ||
             "Check-in recorded successfully.";
-
 
         updateStatus(
             "success",
@@ -884,7 +837,6 @@ function handleResponse(res) {
             safeTimestamp,
             safeMessage
         );
-
 
         showResultModal(
             "success",
@@ -895,12 +847,9 @@ function handleResponse(res) {
             safeMessage,
             bulkInfo,
             school
-
         );
 
-
         clearInput();
-
 
         finishProcessing();
 
@@ -920,23 +869,19 @@ function handleResponse(res) {
 
         playSound("error");
 
-
         const safeName =
             name ||
             (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
-
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
 
-
         const safeMessage =
             message ||
             "This attendee has already been recorded.";
-
 
         updateStatus(
             "already",
@@ -945,7 +890,6 @@ function handleResponse(res) {
             safeTimestamp,
             safeMessage
         );
-
 
         showResultModal(
             "already",
@@ -958,9 +902,7 @@ function handleResponse(res) {
             school
         );
 
-
         clearInput();
-
 
         finishProcessing();
 
@@ -979,23 +921,19 @@ function handleResponse(res) {
 
         playSound("error");
 
-
         const safeName =
             name ||
             (directoryRecord && directoryRecord.name) ||
             attendeeId ||
             "ATTENDEE";
 
-
         const safeTimestamp =
             timestamp ||
             getCurrentTimestamp();
 
-
         const safeMessage =
             message ||
             "This check-in cannot be processed yet.";
-
 
         updateStatus(
             "error",
@@ -1005,7 +943,6 @@ function handleResponse(res) {
             safeMessage
         );
 
-
         showResultModal(
             "error",
             "TRY AGAIN",
@@ -1013,10 +950,9 @@ function handleResponse(res) {
             attendeeId,
             safeTimestamp,
             safeMessage,
-            null,
+            bulkInfo, // Retain bulkInfo on BLOCKED so counts are displayed
             school
         );
-
 
         finishProcessing();
 
@@ -1031,22 +967,18 @@ function handleResponse(res) {
 
     playSound("error");
 
-
     const safeName =
         name ||
         attendeeId ||
         "";
 
-
     const safeTimestamp =
         timestamp ||
         getCurrentTimestamp();
 
-
     const safeMessage =
         message ||
         "Unable to process this check-in. Please try again.";
-
 
     updateStatus(
         "error",
@@ -1056,7 +988,6 @@ function handleResponse(res) {
         safeMessage
     );
 
-
     showResultModal(
         "error",
         "TRY AGAIN",
@@ -1064,10 +995,9 @@ function handleResponse(res) {
         attendeeId,
         safeTimestamp,
         safeMessage,
-        null,
+        bulkInfo,
         school
     );
-
 
     finishProcessing();
 
@@ -1102,13 +1032,10 @@ function handleError(error) {
         error
     );
 
-
     playSound("error");
-
 
     const timestamp =
         getCurrentTimestamp();
-
 
     updateStatus(
         "error",
@@ -1118,7 +1045,6 @@ function handleError(error) {
         "Unable to communicate with the check-in server. Please try again."
     );
 
-
     showResultModal(
         "error",
         "TRY AGAIN",
@@ -1127,7 +1053,6 @@ function handleError(error) {
         timestamp,
         "Unable to communicate with the check-in server. Please try again."
     );
-
 
     finishProcessing();
 
@@ -1150,10 +1075,8 @@ function updateStatus(
         return;
     }
 
-
     statusBox.className =
         `result-panel ${type}`;
-
 
     if (resultTitle) {
 
@@ -1163,7 +1086,6 @@ function updateStatus(
 
     }
 
-
     if (resultName) {
 
         resultName.textContent =
@@ -1171,7 +1093,6 @@ function updateStatus(
             "No attendee scanned";
 
     }
-
 
     if (resultTime) {
 
@@ -1181,7 +1102,6 @@ function updateStatus(
 
     }
 
-
     if (resultMessage) {
 
         resultMessage.textContent =
@@ -1189,7 +1109,6 @@ function updateStatus(
             "Select a station and scan an attendee QR code.";
 
     }
-
 
     updateResultIcon(type);
 
@@ -1206,21 +1125,17 @@ function updateResultIcon(type) {
         return;
     }
 
-
     const icon =
         statusBox.querySelector(
             ".result-icon i"
         );
 
-
     if (!icon) {
         return;
     }
 
-
     icon.className =
         "bi";
-
 
     if (
         type === "success"
@@ -1232,7 +1147,6 @@ function updateResultIcon(type) {
 
     }
 
-
     else if (
         type === "already"
     ) {
@@ -1242,7 +1156,6 @@ function updateResultIcon(type) {
         );
 
     }
-
 
     else if (
         type === "error"
@@ -1254,7 +1167,6 @@ function updateResultIcon(type) {
 
     }
 
-
     else {
 
         icon.classList.add(
@@ -1264,7 +1176,6 @@ function updateResultIcon(type) {
     }
 
 }
-
 
 /* =========================================================
    RESULT MODAL
