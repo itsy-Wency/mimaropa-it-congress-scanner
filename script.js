@@ -482,55 +482,39 @@ function getCameraErrorMessage(error) {
 
 function handleQrSuccess(decodedText) {
 
-    const now =
-        Date.now();
-
-
-    /*
-        Prevent html5-qrcode from submitting the same
-        QR code repeatedly within the cooldown period.
-    */
+    const now = Date.now();
 
     if (
         decodedText === lastScannedCode &&
         now - lastScanTime < SCAN_COOLDOWN
     ) {
-
         return;
-
     }
 
+    lastScannedCode = decodedText;
+    lastScanTime = now;
 
-    lastScannedCode =
-        decodedText;
+    // --- ADD REGEX EXTRACTION HERE ---
+    let attendeeId = String(decodedText).trim();
 
-    lastScanTime =
-        now;
-
-
-    const attendeeId =
-        String(decodedText)
-            .trim()
-            .toUpperCase();
-
+    // Extract ID inside parentheses if present (e.g., ATT-BLK-CATANGLAO2)
+    const match = attendeeId.match(/\((.*?)\)/);
+    if (match && match[1]) {
+        attendeeId = match[1].trim().toUpperCase();
+    } else {
+        attendeeId = attendeeId.toUpperCase();
+    }
+    // ---------------------------------
 
     if (!attendeeId) {
-
         return;
-
     }
-
 
     if (searchInput) {
-
-        searchInput.value =
-            attendeeId;
-
+        searchInput.value = attendeeId;
     }
 
-
     processCheckIn(attendeeId);
-
 }
 
 
