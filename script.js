@@ -1457,58 +1457,54 @@ function showResultModal(
     if (modalMessage) {
         modalMessage.textContent = "Attendance recorded successfully.";
     }
-
-    /* ---------------------------------------------------------
-        REGISTRATION SUMMARY CARD
+/* ---------------------------------------------------------
+        REGISTRATION SUMMARY CARD (BULK VS INDIVIDUAL TOGGLE)
     --------------------------------------------------------- */
 
-    if (bulkRegistrationInfo) {
-        bulkRegistrationInfo.style.display = "block";
+    if (bulkInfo && bulkInfo.isBulk) {
+        // Show bulk UI for group/bulk scans
+        if (bulkRegistrationInfo) bulkRegistrationInfo.style.display = "block";
+        if (individualSchool) individualSchool.style.display = "none";
 
-        if (individualSchool) {
-            individualSchool.style.display = "none";
-        }
-
-        const bulkSchoolLabel =
-            bulkRegistrationInfo.querySelector(".bulk-school .bulk-label");
+        const bulkSchoolLabel = bulkRegistrationInfo
+            ? bulkRegistrationInfo.querySelector(".bulk-school .bulk-label")
+            : null;
 
         if (bulkSchoolLabel) {
             bulkSchoolLabel.textContent = "SCHOOL / ORGANIZATION";
         }
 
-        /* Resolve School Name */
         const directoryRecordForSchool =
             finalId && finalId !== "NO ATTENDEE ID" && finalId !== "ATTENDEE"
                 ? findAttendeeById(finalId)
                 : null;
 
         const resolvedSchool =
-            (bulkInfo && bulkInfo.school) ||
+            bulkInfo.school ||
             school ||
             (directoryRecordForSchool && directoryRecordForSchool.school) ||
             "Not Specified";
 
-        if (modalSchool) {
-            modalSchool.textContent = resolvedSchool;
-        }
+        if (modalSchool) modalSchool.textContent = resolvedSchool;
+        if (modalHeadcount) modalHeadcount.textContent = Number(bulkInfo.headcount || 0).toLocaleString();
+        if (modalPaying) modalPaying.textContent = Number(bulkInfo.payingParticipants || bulkInfo.paying || 0).toLocaleString();
+        if (modalFree) modalFree.textContent = Number(bulkInfo.free || 0).toLocaleString();
 
-        /* Populate summary counts */
-        if (modalHeadcount) {
-            const val = bulkInfo ? bulkInfo.headcount : 0;
-            modalHeadcount.textContent = Number(val || 0).toLocaleString();
-        }
-
-        if (modalPaying) {
-            const val = bulkInfo ? (bulkInfo.payingParticipants || bulkInfo.paying) : 0;
-            modalPaying.textContent = Number(val || 0).toLocaleString();
-        }
-
-        if (modalFree) {
-            const val = bulkInfo ? bulkInfo.free : 0;
-            modalFree.textContent = Number(val || 0).toLocaleString();
+    } else {
+        // Hide bulk UI & show individual details for standard scans
+        if (bulkRegistrationInfo) bulkRegistrationInfo.style.display = "none";
+        if (individualSchool) {
+            individualSchool.style.display = "block";
+            if (individualModalSchool) {
+                const directoryRecord = finalId ? findAttendeeById(finalId) : null;
+                individualModalSchool.textContent =
+                    school ||
+                    (directoryRecord && directoryRecord.school) ||
+                    "Not Specified";
+            }
         }
     }
-
+    
     /* -----------------------------------------------------
        SHOW MODAL
     ----------------------------------------------------- */
