@@ -52,9 +52,13 @@ function loadAttendeeDirectory() {
     .then(list => {
         if (Array.isArray(list)) {
             attendeeDirectory = list.map(item => ({
-                id: String(item.id || "").trim().toUpperCase(),
-                name: String(item.name || "").trim(),
-                school: String(item.school || "").trim()
+                id: String(item.id || item.groupId || "").trim().toUpperCase(),
+                name: String(item.name || item.fullName || "").trim(),
+                school: String(item.school || "").trim(),
+                // Map the dynamic bulk counts directly from Google Sheet columns
+                headcount: Number(item.headcount ?? item.headCount ?? 0),
+                free: Number(item.free ?? item.freeParticipants ?? 0),
+                paying: Number(item.payee ?? item.paying ?? item.payingParticipants ?? 0)
             })).filter(item => item.id);
 
             console.log("Attendee directory loaded:", attendeeDirectory.length);
@@ -766,7 +770,7 @@ function handleResponse(res) {
     }
     
 /* ---------------------------------------------------------
-       NORMALIZE RESPONSE VALUES & PARSE SCANNER MESSAGE
+       NORMALIZE RESPONSE VALUES & DYNAMIC DIRECTORY LOOKUP
     --------------------------------------------------------- */
 
     const status = String(data.status || "").trim().toUpperCase();
@@ -777,27 +781,30 @@ function handleResponse(res) {
     let parsedName = String(data.name || data.fullName || data.fullname || "").trim();
     let parsedId = String(data.attendeeId || data.id || "").trim();
 
-    // Regex match for formats like: "[SUCCESS] NAME (ATT-ID) marked PRESENT."
-    if (!parsedId || !parsedName) {
-        const match = rawMessage.match(/\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i);
-        if (match) {
-            if (!parsedName) parsedName = match[1].trim();
-            if (!parsedId) parsedId = match[2].trim();
-        }
+    const match = rawMessage.match(/\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i);
+    if (match) {
+        if (!parsedName) parsedName = match[1].trim();
+        if (!parsedId) parsedId = match[2].trim();
     }
 
     const attendeeId = parsedId;
     const safeAttendeeId = attendeeId.toUpperCase();
 
-    /* 2. Lookup Directory Record using extracted ID */
+    /* 2. Find matching row from loaded Sheets directory */
     const directoryRecord = safeAttendeeId ? findAttendeeById(safeAttendeeId) : null;
 
     const name = parsedName || (directoryRecord && directoryRecord.name) || "";
-    const school = String(data.school || data.schoolName || (directoryRecord && directoryRecord.school) || "").trim();
-    const timestamp = String(data.timestamp || "").trim();
-    const message = rawMessage || "No additional information was provided.";
+    const school = String(
+        data.school || 
+        data.schoolName || 
+        (directoryRecord && directoryRecord.school) || 
+        ""
+    ).trim();
 
-    /* 3. Bulk Info Normalization & Fallbacks */
+    const timestamp = String(data.timestamp || "").trim();
+    const message = rawMessage || "Attendance recorded successfully.";
+
+    /* 3. Bulk Info - Dynamically pull numbers from backend OR directoryRecord */
     const bulkFlag =
         data.isBulk === true ||
         String(data.isBulk || "").toLowerCase() === "true" ||
@@ -807,29 +814,29 @@ function handleResponse(res) {
     const bulkInfo = bulkFlag
         ? {
             isBulk: true,
-            school: school || (directoryRecord && directoryRecord.school) || "MEOWMEOW UNIVERSITY",
-            headcount: Number(data.headcount ?? data.headCount ?? 151),
-            free: Number(data.free ?? data.freeParticipants ?? 5),
+            name: name,
+            id: safeAttendeeId,
+            school: school,
+            headcount: Number(
+                data.headcount ?? 
+                data.headCount ?? 
+                (directoryRecord && directoryRecord.headcount) ?? 
+                0
+            ),
+            free: Number(
+                data.free ?? 
+                data.freeParticipants ?? 
+                (directoryRecord && directoryRecord.free) ?? 
+                0
+            ),
             payingParticipants: Number(
                 data.payingParticipants ??
                 data.paying ??
-                (data.headcount ? Math.max(Number(data.headcount) - Number(data.free || 0), 0) : 146)
+                (directoryRecord && directoryRecord.paying) ??
+                0
             )
         }
         : null;
-
-    console.log(
-        "Normalized scan response:",
-        {
-            status: status,
-            displayStatus: displayStatus,
-            name: name,
-            attendeeId: attendeeId,
-            timestamp: timestamp,
-            message: message,
-            bulkInfo: bulkInfo
-        }
-    );
 
     /* =========================================================
        SUCCESS
