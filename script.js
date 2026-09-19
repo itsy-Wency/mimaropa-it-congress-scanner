@@ -938,19 +938,27 @@ const message =
 
 
 /* ---------------------------------------------------------
-   3. BULK REGISTRATION FLAG
+   3. BULK REGISTRATION FLAG + BULK DATA
 --------------------------------------------------------- */
 
 /*
  * IMPORTANT:
+ * Get bulkInfo FIRST.
+ * Then determine bulkFlag.
  *
- * Do NOT determine bulk status from the
- * attendee ID prefix.
- *
- * The Apps Script tells us whether the
- * matched spreadsheet row belongs to
- * Group_Bulk Attendees.
+ * Do NOT determine bulk status from the attendee ID.
  */
+
+const serverBulkInfo =
+    data.bulkInfo &&
+    typeof data.bulkInfo === "object"
+        ? data.bulkInfo
+        : {};
+
+
+/* ---------------------------------------------------------
+   DETERMINE WHETHER THIS IS A BULK REGISTRATION
+--------------------------------------------------------- */
 
 const bulkFlag =
     data.isBulk === true ||
@@ -962,47 +970,7 @@ const bulkFlag =
 
 
 /* ---------------------------------------------------------
-   4. BULK REGISTRATION DATA
---------------------------------------------------------- */
-
-/*
- * Individual registrations:
- *
- * bulkInfo = null
- *
- * Therefore, the frontend MUST NOT show
- * the registration summary cards.
- *
- * For bulk registrations, values are taken directly
- * from the backend response.
- *
- * Spreadsheet mapping:
- *
- * Column F = SCHOOL
- * Column M = HEADCOUNT
- * Column N = FREE
- * Column O = PAYEE
- */
-
-/* ---------------------------------------------------------
-   3. BULK REGISTRATION FLAG
---------------------------------------------------------- */
-
-/*
- * Bulk status must come from the backend.
- *
- * Do NOT use the attendee ID prefix to determine
- * whether the registration is bulk.
- */
-
-const serverBulkInfo =
-    data.bulkInfo &&
-    typeof data.bulkInfo === "object"
-        ? data.bulkInfo
-        : {};
-
-/* ---------------------------------------------------------
-   4. BULK REGISTRATION DATA
+   BUILD BULK INFORMATION
 --------------------------------------------------------- */
 
 const bulkInfo =
@@ -1011,7 +979,10 @@ const bulkInfo =
 
             isBulk: true,
 
-            /* Column F */
+            /*
+             * Column F
+             * SCHOOL
+             */
             school:
                 String(
                     data.school ||
@@ -1020,7 +991,10 @@ const bulkInfo =
                     ""
                 ).trim(),
 
-            /* Column M */
+            /*
+             * Column M
+             * HEADCOUNT
+             */
             headcount:
                 Number(
                     data.headcount ??
@@ -1033,7 +1007,10 @@ const bulkInfo =
                     0
                 ),
 
-            /* Column N */
+            /*
+             * Column N
+             * FREE
+             */
             free:
                 Number(
                     data.free ??
@@ -1047,7 +1024,13 @@ const bulkInfo =
                     0
                 ),
 
-            /* Column O / PAYEE */
+            /*
+             * Column O
+             * PAYEE
+             *
+             * DO NOT calculate:
+             * HEADCOUNT - FREE
+             */
             payingParticipants:
                 Number(
                     data.payingParticipants ??
@@ -1060,8 +1043,29 @@ const bulkInfo =
                     ) ??
                     0
                 )
+
         }
         : null;
+
+
+/* ---------------------------------------------------------
+   DEBUG
+--------------------------------------------------------- */
+
+console.log(
+    "SERVER BULK INFO:",
+    serverBulkInfo
+);
+
+console.log(
+    "BULK FLAG:",
+    bulkFlag
+);
+
+console.log(
+    "FINAL BULK INFO:",
+    bulkInfo
+);
 
 
 /* ---------------------------------------------------------
