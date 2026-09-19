@@ -1320,8 +1320,9 @@ function handleResponse(res) {
 
 
         const safeTimestamp =
-            timestamp ||
-            getCurrentTimestamp();
+        formatModalTimestamp(
+            timestamp || getCurrentTimestamp()
+        );
 
 
         const safeMessage =
@@ -1376,8 +1377,9 @@ function handleResponse(res) {
 
 
         const safeTimestamp =
-            timestamp ||
-            getCurrentTimestamp();
+        formatModalTimestamp(
+            timestamp || getCurrentTimestamp()
+        );
 
 
         const safeMessage =
@@ -1426,8 +1428,9 @@ function handleResponse(res) {
 
 
     const safeTimestamp =
-        timestamp ||
-        getCurrentTimestamp();
+    formatModalTimestamp(
+        timestamp || getCurrentTimestamp()
+    );
 
 
     const safeMessage =
@@ -1781,10 +1784,9 @@ function showResultModal(
         );
 
     const safeTimestamp =
-        String(
-            timestamp ||
-            getCurrentTimestamp()
-        );
+    formatModalTimestamp(
+        timestamp || getCurrentTimestamp()
+    );
 
     const safeMessage =
         String(
@@ -2628,8 +2630,9 @@ function handleOverrideResponse(
 
 
         const safeTimestamp =
-            timestamp ||
-            getCurrentTimestamp();
+        formatModalTimestamp(
+            timestamp || getCurrentTimestamp()
+        );
 
 
         updateStatus(
@@ -2684,8 +2687,9 @@ function handleOverrideResponse(
 
 
         const safeTimestamp =
-            timestamp ||
-            getCurrentTimestamp();
+        formatModalTimestamp(
+            timestamp || getCurrentTimestamp()
+        );
 
 
         updateStatus(
@@ -2767,8 +2771,9 @@ function handleOverrideResponse(
 
 
     const safeTimestamp =
-        timestamp ||
-        getCurrentTimestamp();
+    formatModalTimestamp(
+        timestamp || getCurrentTimestamp()
+    );
 
 
     showResultModal(
