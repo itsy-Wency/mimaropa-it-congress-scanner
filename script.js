@@ -54,7 +54,11 @@ function loadAttendeeDirectory() {
             attendeeDirectory = list.map(item => ({
                 id: String(item.id || "").trim().toUpperCase(),
                 name: String(item.name || "").trim(),
-                school: String(item.school || "").trim()
+                school: String(item.school || "").trim(),
+                isBulk:
+                    item.isBulk === true ||
+                    String(item.isBulk || "").toLowerCase() === "true" ||
+                    String(item.isBulk || "") === "1"
             })).filter(item => item.id);
 
             console.log("Attendee directory loaded:", attendeeDirectory.length);
@@ -837,9 +841,9 @@ if (
 ) {
 
     const match =
-        rawMessage.match(
-            /\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i
-        );
+    rawMessage.match(
+        /\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i
+    );
 
 
     if (match) {
@@ -980,12 +984,27 @@ const bulkFlag =
  *
  * Therefore, the frontend MUST NOT show
  * the registration summary cards.
+ *
+ * For bulk registrations, values are taken directly
+ * from the backend response.
+ *
+ * Spreadsheet mapping:
+ *
+ * Column F = SCHOOL
+ * Column M = HEADCOUNT
+ * Column N = FREE
+ * Column O = PAYEE
  */
+
+const serverBulkInfo =
+    data.bulkInfo &&
+    typeof data.bulkInfo === "object"
+        ? data.bulkInfo
+        : {};
 
 const bulkInfo =
     bulkFlag
         ? {
-
             isBulk: true,
 
             /*
@@ -995,17 +1014,19 @@ const bulkInfo =
                 String(
                     data.school ||
                     data.schoolName ||
+                    serverBulkInfo.school ||
                     ""
-                )
-                    .trim(),
+                ).trim(),
 
             /*
              * Column M
+             * HEADCOUNT
              */
             headcount:
                 Number(
                     data.headcount ??
                     data.headCount ??
+                    serverBulkInfo.headcount ??
                     (
                         data.registration &&
                         data.registration.headcount
@@ -1015,11 +1036,14 @@ const bulkInfo =
 
             /*
              * Column N
+             * FREE
              */
             free:
                 Number(
                     data.free ??
                     data.freeParticipants ??
+                    serverBulkInfo.free ??
+                    serverBulkInfo.freeParticipants ??
                     (
                         data.registration &&
                         data.registration.free
@@ -1029,25 +1053,28 @@ const bulkInfo =
 
             /*
              * Column O
+             * PAYEE
              *
-             * PAYEE is already stored in
-             * the spreadsheet.
-             *
+             * IMPORTANT:
              * DO NOT calculate:
              *
              * HEADCOUNT - FREE
+             *
+             * PAYEE is taken directly
+             * from Column O.
              */
             payingParticipants:
                 Number(
                     data.payingParticipants ??
                     data.payee ??
+                    serverBulkInfo.payingParticipants ??
+                    serverBulkInfo.payee ??
                     (
                         data.registration &&
                         data.registration.payee
                     ) ??
                     0
                 )
-
         }
         : null;
 
@@ -1622,11 +1649,6 @@ function updateResultIcon(type) {
 
 /* =========================================================
    RESULT MODAL
-========================================================= */
-
-/* =========================================================
-   RESULT MODAL
-   MOBILE-FIRST SCAN RESULT DISPLAY
 ========================================================= */
 
 /* =========================================================
