@@ -829,11 +829,9 @@ let parsedId =
         .trim();
 
 
-/*
- * Fallback parser for older server responses such as:
- *
- * [SUCCESS] JOHN DOE (ATT-IND-001) marked PRESENT.
- */
+/* ---------------------------------------------------------
+   FALLBACK PARSER FOR OLDER SERVER RESPONSES
+--------------------------------------------------------- */
 
 if (
     !parsedId ||
@@ -841,30 +839,22 @@ if (
 ) {
 
     const match =
-    rawMessage.match(
-        /\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i
-    );
-
+        rawMessage.match(
+            /\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i
+        );
 
     if (match) {
 
         if (!parsedName) {
-
             parsedName =
                 match[1].trim();
-
         }
-
 
         if (!parsedId) {
-
             parsedId =
                 match[2].trim();
-
         }
-
     }
-
 }
 
 
@@ -964,13 +954,11 @@ const message =
 
 const bulkFlag =
     data.isBulk === true ||
-    String(
-        data.isBulk || ""
-    )
-        .toLowerCase() === "true" ||
-    String(
-        data.isBulk || ""
-    ) === "1";
+    serverBulkInfo.isBulk === true ||
+    String(data.isBulk || "").toLowerCase() === "true" ||
+    String(serverBulkInfo.isBulk || "").toLowerCase() === "true" ||
+    String(data.isBulk || "") === "1" ||
+    String(serverBulkInfo.isBulk || "") === "1";
 
 
 /* ---------------------------------------------------------
@@ -996,20 +984,34 @@ const bulkFlag =
  * Column O = PAYEE
  */
 
+/* ---------------------------------------------------------
+   3. BULK REGISTRATION FLAG
+--------------------------------------------------------- */
+
+/*
+ * Bulk status must come from the backend.
+ *
+ * Do NOT use the attendee ID prefix to determine
+ * whether the registration is bulk.
+ */
+
 const serverBulkInfo =
     data.bulkInfo &&
     typeof data.bulkInfo === "object"
         ? data.bulkInfo
         : {};
 
+/* ---------------------------------------------------------
+   4. BULK REGISTRATION DATA
+--------------------------------------------------------- */
+
 const bulkInfo =
     bulkFlag
         ? {
+
             isBulk: true,
 
-            /*
-             * Column F
-             */
+            /* Column F */
             school:
                 String(
                     data.school ||
@@ -1018,10 +1020,7 @@ const bulkInfo =
                     ""
                 ).trim(),
 
-            /*
-             * Column M
-             * HEADCOUNT
-             */
+            /* Column M */
             headcount:
                 Number(
                     data.headcount ??
@@ -1034,10 +1033,7 @@ const bulkInfo =
                     0
                 ),
 
-            /*
-             * Column N
-             * FREE
-             */
+            /* Column N */
             free:
                 Number(
                     data.free ??
@@ -1051,18 +1047,7 @@ const bulkInfo =
                     0
                 ),
 
-            /*
-             * Column O
-             * PAYEE
-             *
-             * IMPORTANT:
-             * DO NOT calculate:
-             *
-             * HEADCOUNT - FREE
-             *
-             * PAYEE is taken directly
-             * from Column O.
-             */
+            /* Column O / PAYEE */
             payingParticipants:
                 Number(
                     data.payingParticipants ??
