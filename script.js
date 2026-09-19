@@ -621,7 +621,7 @@ function processCheckIn(attendeeId) {
     );
 
     const payload = {
-        action: "scan",
+        action: "manualOverride",
         attendeeId: attendeeId,
         session: session
     };
@@ -2455,9 +2455,10 @@ function processManualOverride() {
     },
 
     body: JSON.stringify({
-        action: "scan",
+        action: "manualOverride",
         attendeeId: attendeeId,
-        session: selectedSession
+        session: session,
+        pin: pin
     })
 
 })
