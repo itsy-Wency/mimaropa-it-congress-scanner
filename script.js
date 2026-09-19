@@ -839,9 +839,9 @@ if (
 ) {
 
     const match =
-        rawMessage.match(
-            /\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i
-        );
+    rawMessage.match(
+        /\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i
+    );
 
     if (match) {
 
@@ -936,116 +936,194 @@ const message =
     rawMessage ||
     "No additional information was provided.";
 
-
 /* ---------------------------------------------------------
    3. BULK REGISTRATION FLAG + BULK DATA
 --------------------------------------------------------- */
 
 /*
  * IMPORTANT:
- * Get bulkInfo FIRST.
- * Then determine bulkFlag.
  *
- * Do NOT determine bulk status from the attendee ID.
+ * The backend already tells us whether this registration
+ * is bulk through:
+ *
+ *     data.isBulk
+ *
+ * and/or:
+ *
+ *     data.bulkInfo.isBulk
+ *
+ * NEVER determine bulk status from the attendee ID.
  */
-
-const serverBulkInfo =
-    data.bulkInfo &&
-    typeof data.bulkInfo === "object"
-        ? data.bulkInfo
-        : {};
 
 
 /* ---------------------------------------------------------
-   DETERMINE WHETHER THIS IS A BULK REGISTRATION
+   GET SERVER BULK INFO
+--------------------------------------------------------- */
+
+const serverBulkInfo =
+    (
+        data &&
+        data.bulkInfo &&
+        typeof data.bulkInfo === "object"
+    )
+        ? data.bulkInfo
+        : null;
+
+
+/* ---------------------------------------------------------
+   DETERMINE BULK STATUS
 --------------------------------------------------------- */
 
 const bulkFlag =
     data.isBulk === true ||
-    serverBulkInfo.isBulk === true ||
     String(data.isBulk || "").toLowerCase() === "true" ||
-    String(serverBulkInfo.isBulk || "").toLowerCase() === "true" ||
     String(data.isBulk || "") === "1" ||
-    String(serverBulkInfo.isBulk || "") === "1";
+    (
+        serverBulkInfo &&
+        (
+            serverBulkInfo.isBulk === true ||
+            String(
+                serverBulkInfo.isBulk || ""
+            ).toLowerCase() === "true" ||
+            String(
+                serverBulkInfo.isBulk || ""
+            ) === "1"
+        )
+    );
 
 
 /* ---------------------------------------------------------
    BUILD BULK INFORMATION
 --------------------------------------------------------- */
 
-const bulkInfo =
-    bulkFlag
-        ? {
+let bulkInfo = null;
 
-            isBulk: true,
 
-            /*
-             * Column F
-             * SCHOOL
-             */
-            school:
-                String(
-                    data.school ||
-                    data.schoolName ||
-                    serverBulkInfo.school ||
-                    ""
-                ).trim(),
+if (bulkFlag) {
 
-            /*
-             * Column M
-             * HEADCOUNT
-             */
-            headcount:
-                Number(
-                    data.headcount ??
-                    data.headCount ??
-                    serverBulkInfo.headcount ??
-                    (
-                        data.registration &&
-                        data.registration.headcount
-                    ) ??
-                    0
-                ),
+    /*
+     * SCHOOL
+     *
+     * Backend Column F has priority.
+     */
 
-            /*
-             * Column N
-             * FREE
-             */
-            free:
-                Number(
-                    data.free ??
-                    data.freeParticipants ??
-                    serverBulkInfo.free ??
-                    serverBulkInfo.freeParticipants ??
-                    (
-                        data.registration &&
-                        data.registration.free
-                    ) ??
-                    0
-                ),
+    const bulkSchool =
+        String(
+            data.school ||
+            data.schoolName ||
+            (
+                serverBulkInfo &&
+                serverBulkInfo.school
+            ) ||
+            (
+                data.registration &&
+                data.registration.school
+            ) ||
+            ""
+        ).trim();
 
-            /*
-             * Column O
-             * PAYEE
-             *
-             * DO NOT calculate:
-             * HEADCOUNT - FREE
-             */
-            payingParticipants:
-                Number(
-                    data.payingParticipants ??
-                    data.payee ??
-                    serverBulkInfo.payingParticipants ??
-                    serverBulkInfo.payee ??
-                    (
-                        data.registration &&
-                        data.registration.payee
-                    ) ??
-                    0
-                )
 
-        }
-        : null;
+    /*
+     * HEADCOUNT
+     *
+     * Column M
+     */
+
+    const bulkHeadcount =
+        Number(
+            data.headcount ??
+            data.headCount ??
+            (
+                serverBulkInfo &&
+                serverBulkInfo.headcount
+            ) ??
+            (
+                data.registration &&
+                data.registration.headcount
+            ) ??
+            0
+        );
+
+
+    /*
+     * FREE PARTICIPANTS
+     *
+     * Column N
+     */
+
+    const bulkFree =
+        Number(
+            data.free ??
+            data.freeParticipants ??
+            (
+                serverBulkInfo &&
+                serverBulkInfo.free
+            ) ??
+            (
+                serverBulkInfo &&
+                serverBulkInfo.freeParticipants
+            ) ??
+            (
+                data.registration &&
+                data.registration.free
+            ) ??
+            0
+        );
+
+
+    /*
+     * PAYING PARTICIPANTS
+     *
+     * Column O / PAYEE
+     *
+     * IMPORTANT:
+     *
+     * DO NOT calculate:
+     *
+     *     headcount - free
+     *
+     * We use the actual PAYEE value from Column O.
+     */
+
+    const bulkPayee =
+        Number(
+            data.payingParticipants ??
+            data.payee ??
+            (
+                serverBulkInfo &&
+                serverBulkInfo.payingParticipants
+            ) ??
+            (
+                serverBulkInfo &&
+                serverBulkInfo.payee
+            ) ??
+            (
+                data.registration &&
+                data.registration.payee
+            ) ??
+            0
+        );
+
+
+    bulkInfo = {
+
+        isBulk: true,
+
+        school:
+            bulkSchool,
+
+        headcount:
+            bulkHeadcount,
+
+        free:
+            bulkFree,
+
+        payingParticipants:
+            bulkPayee
+
+    };
+
+}
 
 
 /* ---------------------------------------------------------
