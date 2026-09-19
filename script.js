@@ -44,24 +44,21 @@ function loadAttendeeDirectory() {
         redirect: "follow"
     })
     .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
     })
     .then(list => {
         if (Array.isArray(list)) {
             attendeeDirectory = list.map(item => ({
-                id: String(item.id || item.groupId || "").trim().toUpperCase(),
-                name: String(item.name || item.fullName || "").trim(),
-                school: String(item.school || "").trim(),
-                // Map the dynamic bulk counts directly from Google Sheet columns
-                headcount: Number(item.headcount ?? item.headCount ?? 0),
-                free: Number(item.free ?? item.freeParticipants ?? 0),
-                paying: Number(item.payee ?? item.paying ?? item.payingParticipants ?? 0)
+                id: String(item.groupId || item.id || item.GROUP_ID || "").trim().toUpperCase(),
+                name: String(item.fullName || item.name || item.FULL_NAME || "").trim(),
+                school: String(item.school || item.SCHOOL || "").trim(),
+                headcount: Number(item.headcount || item.headCount || item.HEADCOUNT || 0),
+                free: Number(item.free || item.FREE || 0),
+                paying: Number(item.payee || item.paying || item.PAYEE || 0)
             })).filter(item => item.id);
 
-            console.log("Attendee directory loaded:", attendeeDirectory.length);
+            console.log("Attendee directory loaded successfully:", attendeeDirectory.length);
         }
     })
     .catch(error => {
@@ -71,16 +68,12 @@ function loadAttendeeDirectory() {
 
 function findAttendeeById(attendeeId) {
     const cleanId = String(attendeeId || "").trim().toUpperCase();
-
     if (!cleanId || !Array.isArray(attendeeDirectory) || attendeeDirectory.length === 0) {
         return null;
     }
-
-    return attendeeDirectory.find(item => {
-        if (!item) return false;
-        const itemId = String(item.id || item.attendeeId || "").trim().toUpperCase();
-        return itemId === cleanId;
-    }) || null;
+    
+    // Exact ID match against sheet rows
+    return attendeeDirectory.find(item => item.id === cleanId) || null;
 }
 
 
@@ -770,30 +763,33 @@ function handleResponse(res) {
     }
     
 /* ---------------------------------------------------------
-       NORMALIZE RESPONSE VALUES & DYNAMIC DIRECTORY LOOKUP
+       NORMALIZE RESPONSE VALUES & PARSE SCANNER MESSAGE
     --------------------------------------------------------- */
 
     const status = String(data.status || "").trim().toUpperCase();
     const displayStatus = String(data.displayStatus || getDisplayStatus(status)).trim();
     const rawMessage = String(data.message || data.text || "").trim();
 
-    /* 1. Extract Name & ID from raw message if server didn't split them */
+    /* 1. Extract Name & ID from response or raw message regex */
     let parsedName = String(data.name || data.fullName || data.fullname || "").trim();
     let parsedId = String(data.attendeeId || data.id || "").trim();
 
-    const match = rawMessage.match(/\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i);
-    if (match) {
-        if (!parsedName) parsedName = match[1].trim();
-        if (!parsedId) parsedId = match[2].trim();
+    if (!parsedId || !parsedName) {
+        const match = rawMessage.match(/\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i);
+        if (match) {
+            if (!parsedName) parsedName = match[1].trim();
+            if (!parsedId) parsedId = match[2].trim();
+        }
     }
 
-    const attendeeId = parsedId;
+    /* Fall back to lastScannedCode if repeat scan response stripped the ID */
+    const attendeeId = parsedId || lastScannedCode || "";
     const safeAttendeeId = attendeeId.toUpperCase();
 
-    /* 2. Find matching row from loaded Sheets directory */
+    /* 2. Lookup exact matching record from loaded Google Sheets directory */
     const directoryRecord = safeAttendeeId ? findAttendeeById(safeAttendeeId) : null;
 
-    const name = parsedName || (directoryRecord && directoryRecord.name) || "";
+    const name = parsedName || (directoryRecord && directoryRecord.name) || safeAttendeeId || "ATTENDEE";
     const school = String(
         data.school || 
         data.schoolName || 
@@ -804,7 +800,7 @@ function handleResponse(res) {
     const timestamp = String(data.timestamp || "").trim();
     const message = rawMessage || "Attendance recorded successfully.";
 
-    /* 3. Bulk Info - Dynamically pull numbers from backend OR directoryRecord */
+    /* 3. Bulk Info Normalization (Dynamic counts from Sheets) */
     const bulkFlag =
         data.isBulk === true ||
         String(data.isBulk || "").toLowerCase() === "true" ||
