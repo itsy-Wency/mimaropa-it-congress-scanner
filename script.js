@@ -1524,27 +1524,28 @@ function showResultModal(
 
 
     /* -----------------------------------------------------
-       POPULATE ATTENDEE INFORMATION
+        POPULATE ATTENDEE INFORMATION
     ----------------------------------------------------- */
 
+    // Check if bulkInfo contains the attendee details when passed
+    const finalName = (bulkInfo && bulkInfo.name) || safeName;
+    const finalId = (bulkInfo && bulkInfo.id) || safeId;
+
     if (modalName) {
-        modalName.textContent =
-            safeName;
+        modalName.textContent = finalName;
     }
 
     if (modalId) {
-        modalId.textContent =
-            safeId;
+        modalId.textContent = finalId;
     }
 
     if (modalTime) {
-        modalTime.textContent =
-            safeTimestamp;
+        modalTime.textContent = safeTimestamp;
     }
 
+    /* Force the success message to clean string */
     if (modalMessage) {
-        modalMessage.textContent =
-            safeMessage;
+        modalMessage.textContent = "Attendance recorded successfully.";
     }
 
     /* ---------------------------------------------------------
@@ -1552,7 +1553,6 @@ function showResultModal(
     --------------------------------------------------------- */
 
     if (bulkRegistrationInfo) {
-        /* Always show the summary card */
         bulkRegistrationInfo.style.display = "block";
 
         if (individualSchool) {
@@ -1566,10 +1566,10 @@ function showResultModal(
             bulkSchoolLabel.textContent = "SCHOOL / ORGANIZATION";
         }
 
-        /* Get school name from bulk object, single school param, or attendee record */
+        /* Resolve School Name */
         const directoryRecordForSchool =
-            safeId && safeId !== "NO ATTENDEE ID" && safeId !== "ATTENDEE"
-                ? findAttendeeById(safeId)
+            finalId && finalId !== "NO ATTENDEE ID" && finalId !== "ATTENDEE"
+                ? findAttendeeById(finalId)
                 : null;
 
         const resolvedSchool =
