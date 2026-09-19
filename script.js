@@ -763,33 +763,30 @@ function handleResponse(res) {
     }
     
 /* ---------------------------------------------------------
-       NORMALIZE RESPONSE VALUES & PARSE SCANNER MESSAGE
+       NORMALIZE RESPONSE VALUES & DYNAMIC DIRECTORY LOOKUP
     --------------------------------------------------------- */
 
     const status = String(data.status || "").trim().toUpperCase();
     const displayStatus = String(data.displayStatus || getDisplayStatus(status)).trim();
     const rawMessage = String(data.message || data.text || "").trim();
 
-    /* 1. Extract Name & ID from response or raw message regex */
+    /* 1. Extract Name & ID from raw message if server didn't split them */
     let parsedName = String(data.name || data.fullName || data.fullname || "").trim();
     let parsedId = String(data.attendeeId || data.id || "").trim();
 
-    if (!parsedId || !parsedName) {
-        const match = rawMessage.match(/\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i);
-        if (match) {
-            if (!parsedName) parsedName = match[1].trim();
-            if (!parsedId) parsedId = match[2].trim();
-        }
+    const match = rawMessage.match(/\[(?:SUCCESS|ALREADY|ERROR)\]\s+(.*?)\s+\((.*?)\)/i);
+    if (match) {
+        if (!parsedName) parsedName = match[1].trim();
+        if (!parsedId) parsedId = match[2].trim();
     }
 
-    /* Fall back to lastScannedCode if repeat scan response stripped the ID */
-    const attendeeId = parsedId || lastScannedCode || "";
+    const attendeeId = parsedId;
     const safeAttendeeId = attendeeId.toUpperCase();
 
-    /* 2. Lookup exact matching record from loaded Google Sheets directory */
+    /* 2. Find matching row from loaded Sheets directory */
     const directoryRecord = safeAttendeeId ? findAttendeeById(safeAttendeeId) : null;
 
-    const name = parsedName || (directoryRecord && directoryRecord.name) || safeAttendeeId || "ATTENDEE";
+    const name = parsedName || (directoryRecord && directoryRecord.name) || "";
     const school = String(
         data.school || 
         data.schoolName || 
@@ -800,7 +797,7 @@ function handleResponse(res) {
     const timestamp = String(data.timestamp || "").trim();
     const message = rawMessage || "Attendance recorded successfully.";
 
-    /* 3. Bulk Info Normalization (Dynamic counts from Sheets) */
+    /* 3. Bulk Info - Dynamically pull numbers from backend OR directoryRecord */
     const bulkFlag =
         data.isBulk === true ||
         String(data.isBulk || "").toLowerCase() === "true" ||
