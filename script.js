@@ -27,6 +27,11 @@ let lastScanTime = 0;
 
 const SCAN_COOLDOWN = 2500;
 
+
+// Prevent the same QR code from triggering multiple
+// server requests at the same time.
+let isQrCheckInProcessing = false;
+
 /* =========================================================
    ATTENDEE DIRECTORY FALLBACK
    The Apps Script endpoint exposes ?action=attendees.
@@ -34,6 +39,8 @@ const SCAN_COOLDOWN = 2500;
    SCHOOL from the same Google Sheet even if the scan response
    does not include those fields.
 ========================================================= */
+
+
 
 let attendeeDirectory = [];
 
@@ -496,34 +503,71 @@ function handleQrSuccess(decodedText) {
 
     const now = Date.now();
 
+    /*
+     * IMPORTANT:
+     * Ignore additional QR detections while the current
+     * check-in request is still being processed.
+     *
+     * html5-qrcode can detect the same QR multiple times
+     * very quickly.
+     */
+    if (isQrCheckInProcessing) {
+
+        console.log(
+            "QR detection ignored: check-in request already processing."
+        );
+
+        return;
+    }
+
+
+    /*
+     * Additional cooldown protection.
+     */
     if (
         decodedText === lastScannedCode &&
         now - lastScanTime < SCAN_COOLDOWN
     ) {
+
+        console.log(
+            "QR detection ignored: cooldown active."
+        );
+
         return;
     }
 
+
+    /*
+     * Record this scan immediately.
+     */
     lastScannedCode = decodedText;
     lastScanTime = now;
 
 
+    /*
+     * Lock QR processing BEFORE calling the server.
+     */
+    isQrCheckInProcessing = true;
+
+
     // ---------------------------------------------------------
-    // GET ATTENDEE ID FROM QR CODE
+    // EXTRACT ATTENDEE ID
     // ---------------------------------------------------------
 
     let attendeeId =
         String(decodedText || "").trim();
 
 
-    // Extract ID inside parentheses if present
-    // Example:
-    // "MARIA RIVERA (ATT-BLK-RIVERA2)"
-    //
-    // Result:
-    // "ATT-BLK-RIVERA2"
-
-    const match =
-        attendeeId.match(/\((.*?)\)/);
+    /*
+     * Extract ID inside parentheses if present.
+     *
+     * Example:
+     * "Maria Rivera (ATT-BLK-RIVERA2)"
+     *
+     * becomes:
+     * "ATT-BLK-RIVERA2"
+     */
+    const match = attendeeId.match(/\((.*?)\)/);
 
 
     if (
@@ -536,13 +580,10 @@ function handleQrSuccess(decodedText) {
                 .trim()
                 .toUpperCase();
 
-    }
-
-    else {
+    } else {
 
         attendeeId =
-            attendeeId
-                .toUpperCase();
+            attendeeId.toUpperCase();
 
     }
 
@@ -552,12 +593,16 @@ function handleQrSuccess(decodedText) {
     // ---------------------------------------------------------
 
     if (!attendeeId) {
+
+        isQrCheckInProcessing = false;
+
         return;
+
     }
 
 
     // ---------------------------------------------------------
-    // PUT ID INTO SEARCH INPUT
+    // DISPLAY ID
     // ---------------------------------------------------------
 
     if (searchInput) {
@@ -567,10 +612,6 @@ function handleQrSuccess(decodedText) {
 
     }
 
-
-    // ---------------------------------------------------------
-    // NORMAL QR CHECK-IN
-    // ---------------------------------------------------------
 
     console.log(
         "QR CODE DETECTED:",
@@ -582,7 +623,12 @@ function handleQrSuccess(decodedText) {
     );
 
 
+    // ---------------------------------------------------------
+    // NORMAL QR CHECK-IN
+    // ---------------------------------------------------------
+
     processCheckIn(attendeeId);
+
 }
 
 
