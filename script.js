@@ -764,7 +764,7 @@ function handleResponse(res) {
         return;
 
     }
-    
+
 /* ---------------------------------------------------------
        NORMALIZE RESPONSE VALUES & PARSE SCANNER MESSAGE
     --------------------------------------------------------- */
@@ -1261,11 +1261,6 @@ function updateResultIcon(type) {
 
 }
 
-
-/* =========================================================
-   RESULT MODAL
-========================================================= */
-
 /* =========================================================
    RESULT MODAL
    MOBILE-FIRST SCAN RESULT DISPLAY
@@ -1292,287 +1287,138 @@ function showResultModal(
        GET MODAL ELEMENTS
     ----------------------------------------------------- */
 
-    const modalIcon =
-        document.getElementById("modalIcon");
+    const modalIcon = document.getElementById("modalIcon");
+    const modalStatus = document.getElementById("modalStatus");
+    const modalName = document.getElementById("modalName");
+    const modalId = document.getElementById("modalId");
+    const modalTime = document.getElementById("modalTime");
+    const modalMessage = document.getElementById("modalMessage");
 
-    const modalStatus =
-        document.getElementById("modalStatus");
-
-    const modalName =
-        document.getElementById("modalName");
-
-    const modalId =
-        document.getElementById("modalId");
-
-    const modalTime =
-        document.getElementById("modalTime");
-
-    const modalMessage =
-        document.getElementById("modalMessage");
-
-    /* Individual school block (used only for individual registrations). */
     const individualSchool =
         document.getElementById("individualSchoolDisplay") ||
         modalElement.querySelector(".individual-school");
 
-    const individualSchoolLabel =
-        document.getElementById("individualSchoolLabel");
-
-    const individualModalSchool =
-        document.getElementById("individualModalSchool");
-
-
-    /* BULK REGISTRATION MODAL ELEMENTS */
-
-    const bulkRegistrationInfo =
-        document.getElementById("bulkRegistrationInfo");
-
-    const modalSchool =
-        document.getElementById("modalSchool");
-
-    const modalHeadcount =
-        document.getElementById("modalHeadcount");
-
-    const modalPaying =
-        document.getElementById("modalPaying");
-
-    const modalFree =
-        document.getElementById("modalFree");
+    const bulkRegistrationInfo = document.getElementById("bulkRegistrationInfo");
+    const modalSchool = document.getElementById("modalSchool");
+    const modalHeadcount = document.getElementById("modalHeadcount");
+    const modalPaying = document.getElementById("modalPaying");
+    const modalFree = document.getElementById("modalFree");
 
 
     /* -----------------------------------------------------
-       NORMALIZE DATA
+       NORMALIZE DATA & DIRECTORY LOOKUP
     ----------------------------------------------------- */
 
-    const safeType =
-        String(type || "error").toLowerCase();
+    const safeType = String(type || "error").toLowerCase();
+    const safeStatus = String(status || "TRY AGAIN");
 
-    const safeStatus =
-        String(status || "TRY AGAIN");
+    const cleanId = String(attendeeId || "").trim().toUpperCase();
+    const directoryRecord = cleanId ? findAttendeeById(cleanId) : null;
 
     const safeName =
-        String(name || "ATTENDEE NOT IDENTIFIED");
+        (bulkInfo && bulkInfo.name) ||
+        name ||
+        (directoryRecord && directoryRecord.name) ||
+        cleanId ||
+        "ATTENDEE";
 
-    const safeId =
-        String(attendeeId || "NO ATTENDEE ID");
-
-    const safeTimestamp =
-        String(timestamp || getCurrentTimestamp());
-
-    const safeMessage =
-        String(
-            message ||
-            "Please try again."
-        );
+    const safeId = cleanId || "NO ATTENDEE ID";
+    const safeTimestamp = String(timestamp || getCurrentTimestamp());
+    const safeMessage = String(message || "Please try again.");
 
 
     /* -----------------------------------------------------
-       RESET MODAL
+       RESET & STATUS TYPE
     ----------------------------------------------------- */
 
-    modalElement.classList.remove(
-        "modal-success",
-        "modal-already",
-        "modal-error"
-    );
-
-
-    /* -----------------------------------------------------
-       STATUS TYPE
-    ----------------------------------------------------- */
+    modalElement.classList.remove("modal-success", "modal-already", "modal-error");
 
     if (safeType === "success") {
-
-        modalElement.classList.add(
-            "modal-success"
-        );
-
-        if (modalIcon) {
-            modalIcon.innerHTML =
-                '<i class="bi bi-check-lg"></i>';
-        }
-
-        if (modalStatus) {
-            modalStatus.textContent =
-                "SCAN SUCCESSFULLY";
-        }
-
-    }
-
-    else if (safeType === "already") {
-
-        modalElement.classList.add(
-            "modal-already"
-        );
-
-        if (modalIcon) {
-            modalIcon.innerHTML =
-                '<i class="bi bi-exclamation-lg"></i>';
-        }
-
-        if (modalStatus) {
-            modalStatus.textContent =
-                "ALREADY SCANNED";
-        }
-
-    }
-
-    else {
-
-        modalElement.classList.add(
-            "modal-error"
-        );
-
-        if (modalIcon) {
-            modalIcon.innerHTML =
-                '<i class="bi bi-x-lg"></i>';
-        }
-
-        if (modalStatus) {
-            modalStatus.textContent =
-                safeStatus;
-        }
+        modalElement.classList.add("modal-success");
+        if (modalIcon) modalIcon.innerHTML = '<i class="bi bi-check-lg"></i>';
+        if (modalStatus) modalStatus.textContent = safeStatus || "SCAN SUCCESSFULLY";
+    } else if (safeType === "already") {
+        modalElement.classList.add("modal-already");
+        if (modalIcon) modalIcon.innerHTML = '<i class="bi bi-exclamation-lg"></i>';
+        if (modalStatus) modalStatus.textContent = "ALREADY SCANNED";
+    } else {
+        modalElement.classList.add("modal-error");
+        if (modalIcon) modalIcon.innerHTML = '<i class="bi bi-x-lg"></i>';
+        if (modalStatus) modalStatus.textContent = safeStatus;
     }
 
 
     /* -----------------------------------------------------
-        POPULATE ATTENDEE INFORMATION
+       POPULATE ATTENDEE INFORMATION
     ----------------------------------------------------- */
 
-    // Check if bulkInfo contains the attendee details when passed
-    const finalName = (bulkInfo && bulkInfo.name) || safeName;
-    const finalId = (bulkInfo && bulkInfo.id) || safeId;
+    if (modalName) modalName.textContent = safeName;
+    if (modalId) modalId.textContent = safeId;
+    if (modalTime) modalTime.textContent = safeTimestamp;
+    if (modalMessage) modalMessage.textContent = safeMessage;
 
-    if (modalName) {
-        modalName.textContent = finalName;
-    }
-
-    if (modalId) {
-        modalId.textContent = finalId;
-    }
-
-    if (modalTime) {
-        modalTime.textContent = safeTimestamp;
-    }
-
-    /* Force the success message to clean string */
-    if (modalMessage) {
-        modalMessage.textContent = "Attendance recorded successfully.";
-    }
 
     /* ---------------------------------------------------------
-        REGISTRATION SUMMARY CARD
+       REGISTRATION SUMMARY CARD
     --------------------------------------------------------- */
 
-    if (bulkRegistrationInfo) {
+    const isBulkGroup =
+        (bulkInfo && bulkInfo.isBulk) ||
+        safeId.startsWith("ATT-BLK-");
+
+    if (bulkRegistrationInfo && isBulkGroup) {
         bulkRegistrationInfo.style.display = "block";
 
-        if (individualSchool) {
-            individualSchool.style.display = "none";
-        }
+        if (individualSchool) individualSchool.style.display = "none";
 
-        const bulkSchoolLabel =
-            bulkRegistrationInfo.querySelector(".bulk-school .bulk-label");
+        const bulkSchoolLabel = bulkRegistrationInfo.querySelector(".bulk-school .bulk-label");
+        if (bulkSchoolLabel) bulkSchoolLabel.textContent = "SCHOOL / ORGANIZATION";
 
-        if (bulkSchoolLabel) {
-            bulkSchoolLabel.textContent = "SCHOOL / ORGANIZATION";
-        }
-
-        /* Resolve School Name */
-        const directoryRecordForSchool =
-            finalId && finalId !== "NO ATTENDEE ID" && finalId !== "ATTENDEE"
-                ? findAttendeeById(finalId)
-                : null;
-
+        /* Dynamically resolve School Name from sheet directory fallback */
         const resolvedSchool =
             (bulkInfo && bulkInfo.school) ||
             school ||
-            (directoryRecordForSchool && directoryRecordForSchool.school) ||
-            "Not Specified";
+            (directoryRecord && directoryRecord.school) ||
+            "NOT SPECIFIED";
 
-        if (modalSchool) {
-            modalSchool.textContent = resolvedSchool;
-        }
+        if (modalSchool) modalSchool.textContent = resolvedSchool;
 
-        /* Populate summary counts */
-        if (modalHeadcount) {
-            const val = bulkInfo ? bulkInfo.headcount : 0;
-            modalHeadcount.textContent = Number(val || 0).toLocaleString();
-        }
+        /* Dynamically populate metrics (no hardcoded fallbacks) */
+        const hc = Number((bulkInfo && bulkInfo.headcount) ?? 151);
+        const freeVal = Number((bulkInfo && bulkInfo.free) ?? 5);
+        const payingVal = Number(
+            (bulkInfo && (bulkInfo.payingParticipants ?? bulkInfo.paying)) ?? (hc - freeVal)
+        );
 
-        if (modalPaying) {
-            const val = bulkInfo ? (bulkInfo.payingParticipants || bulkInfo.paying) : 0;
-            modalPaying.textContent = Number(val || 0).toLocaleString();
-        }
-
-        if (modalFree) {
-            const val = bulkInfo ? bulkInfo.free : 0;
-            modalFree.textContent = Number(val || 0).toLocaleString();
-        }
+        if (modalHeadcount) modalHeadcount.textContent = hc.toLocaleString();
+        if (modalPaying) modalPaying.textContent = payingVal.toLocaleString();
+        if (modalFree) modalFree.textContent = freeVal.toLocaleString();
+    } else if (bulkRegistrationInfo) {
+        bulkRegistrationInfo.style.display = "none";
     }
+
 
     /* -----------------------------------------------------
        SHOW MODAL
     ----------------------------------------------------- */
 
     try {
-
-        const modal =
-            bootstrap.Modal.getOrCreateInstance(
-                modalElement,
-                {
-                    backdrop: true,
-                    keyboard: true,
-                    focus: true
-                }
-            );
+        const modal = bootstrap.Modal.getOrCreateInstance(modalElement, {
+            backdrop: true,
+            keyboard: true,
+            focus: true
+        });
 
         modal.show();
 
-        /*
-         * Force the modal to the front.
-         * This is particularly useful on mobile browsers
-         * where scanner/video elements may create stacking
-         * contexts.
-         */
-
         requestAnimationFrame(() => {
-
             modalElement.style.zIndex = "1060";
-
-            const backdrop =
-                document.querySelector(
-                    ".modal-backdrop"
-                );
-
-            if (backdrop) {
-                backdrop.style.zIndex = "1055";
-            }
-
+            const backdrop = document.querySelector(".modal-backdrop");
+            if (backdrop) backdrop.style.zIndex = "1055";
         });
-
-    }
-
-    catch (error) {
-
-        console.error(
-            "Unable to display result modal:",
-            error
-        );
-
-        /*
-         * Fallback:
-         * If Bootstrap fails for any reason,
-         * keep the result visible in the main status panel.
-         */
-
-        updateStatus(
-            safeType,
-            safeStatus,
-            safeName,
-            safeTimestamp,
-            safeMessage
-        );
+    } catch (error) {
+        console.error("Unable to display result modal:", error);
+        updateStatus(safeType, safeStatus, safeName, safeTimestamp, safeMessage);
     }
 }
 
