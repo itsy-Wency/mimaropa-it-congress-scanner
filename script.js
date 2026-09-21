@@ -146,8 +146,12 @@ const confirmOverride =
 window.addEventListener("load", () => {
 
     loadAttendeeDirectory();
+
     initializeScanner();
+
     setupEvents();
+
+    setupResultModalEvents();
 
 });
 
@@ -250,6 +254,80 @@ function setupEvents() {
 
 }
 
+/* =========================================================
+   CONTINUE SCANNING
+========================================================= */
+
+function setupResultModalEvents() {
+
+    const resultModal =
+        document.getElementById("resultModal");
+
+    if (!resultModal) {
+        return;
+    }
+
+    const continueButton =
+        resultModal.querySelector(".modal-action");
+
+    if (!continueButton) {
+        return;
+    }
+
+    continueButton.addEventListener(
+        "click",
+        function () {
+
+            console.log(
+                "CONTINUE SCANNING clicked."
+            );
+
+            /*
+             * Allow the Bootstrap modal to finish
+             * closing first.
+             */
+            setTimeout(() => {
+                isProcessing = false;
+                isQrCheckInProcessing = false;
+
+                lastScannedCode = "";
+                lastScanTime = 0;
+
+                clearInput();
+
+                /*
+                 * If the scanner is already running,
+                 * simply allow it to scan again.
+                 */
+                if (
+                    html5QrCode &&
+                    html5QrCode.isScanning
+                ) {
+
+                    console.log(
+                        "QR scanner is already running."
+                    );
+
+                    return;
+
+                }
+
+                /*
+                 * If the scanner stopped,
+                 * start it again.
+                 */
+                console.log(
+                    "Restarting QR scanner..."
+                );
+
+                initializeScanner();
+
+            }, 300);
+
+        }
+    );
+
+}
 
 /* =========================================================
    QR SCANNER
@@ -1021,9 +1099,48 @@ function handleResponse(res) {
        MESSAGE
     ===================================================== */
 
-    const message =
-        rawMessage ||
-        "No additional information was provided.";
+    /* ---------------------------------------------------------
+        FRIENDLY USER-FACING MESSAGE
+    --------------------------------------------------------- */
+
+    const selectedSession = getSelectedStation();
+
+    let message = rawMessage || "Please try again.";
+
+    if (status === "SUCCESS") {
+
+        if (selectedSession === "ATTENDANCE") {
+            message = "Attendance recorded successfully.";
+        }
+
+        else if (selectedSession === "AM_SNACK") {
+            message = "AM Snack claimed successfully.";
+        }
+
+        else if (selectedSession === "PM_SNACK") {
+            message = "PM Snack claimed successfully.";
+        }
+
+    }
+
+    else if (
+        status === "ALREADY_SCANNED" ||
+        status === "ALREADY_PROCESSED"
+    ) {
+
+        if (selectedSession === "ATTENDANCE") {
+            message = "Attendance has already been recorded.";
+        }
+
+        else if (selectedSession === "AM_SNACK") {
+            message = "AM Snack has already been claimed.";
+        }
+
+        else if (selectedSession === "PM_SNACK") {
+            message = "PM Snack has already been claimed.";
+        }
+
+    }
 
 
     /* =====================================================
@@ -1156,12 +1273,6 @@ function handleResponse(res) {
                 ),
 
 
-            /* ---------------------------------------------
-               COLUMN O
-               PAYEE
-
-               DO NOT calculate HEADCOUNT - FREE
-            --------------------------------------------- */
 
             payingParticipants:
                 Number(
