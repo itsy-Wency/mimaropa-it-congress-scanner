@@ -770,72 +770,164 @@ function submitManualId() {
 /* =========================================================
    PROCESS CHECK-IN
 ========================================================= */
+
 function processCheckIn(attendeeId) {
 
-    console.log("✅ processCheckIn() CALLED:", attendeeId);
-    const selectedSession = getSelectedStation();
+    console.log(
+        "✅ processCheckIn() CALLED:",
+        attendeeId
+    );
 
-    console.log("QR SCAN REQUEST:", {
-        action: "scan",
-        attendeeId: attendeeId,
-        session: selectedSession
-    });
+    const selectedSession =
+        getSelectedStation();
 
-    if (!attendeeId) {
-        console.error("No attendee ID supplied.");
-        return;
-    }
-
-    if (!selectedSession) {
-        console.error("No station selected.");
-        return;
-    }
-
-    fetch(DEPLOYED_WEB_APP_URL, {
-        method: "POST",
-        redirect: "follow",
-        headers: {
-            "Content-Type": "text/plain;charset=utf-8"
-        },
-        body: JSON.stringify({
+    console.log(
+        "QR SCAN REQUEST:",
+        {
             action: "scan",
             attendeeId: attendeeId,
             session: selectedSession
-        })
-    })
+        }
+    );
+
+
+    /* -----------------------------------------------------
+       VALIDATE BEFORE LOCKING PROCESSING
+    ----------------------------------------------------- */
+
+    if (!attendeeId) {
+
+        console.error(
+            "No attendee ID supplied."
+        );
+
+        return;
+    }
+
+
+    if (!selectedSession) {
+
+        console.error(
+            "No station selected."
+        );
+
+        return;
+    }
+
+
+    /* -----------------------------------------------------
+       PREVENT DUPLICATE REQUESTS
+    ----------------------------------------------------- */
+
+    if (isProcessing) {
+
+        console.log(
+            "Check-in request already processing."
+        );
+
+        return;
+    }
+
+
+    isProcessing = true;
+
+    setProcessingState(true);
+
+
+    /* -----------------------------------------------------
+       SEND REQUEST
+    ----------------------------------------------------- */
+
+    fetch(
+        DEPLOYED_WEB_APP_URL,
+        {
+            method: "POST",
+            redirect: "follow",
+
+            headers: {
+                "Content-Type":
+                    "text/plain;charset=utf-8"
+            },
+
+            body: JSON.stringify({
+                action: "scan",
+                attendeeId: attendeeId,
+                session: selectedSession
+            })
+        }
+    )
+
     .then(response => {
+
         if (!response.ok) {
-            throw new Error(`HTTP Server Error ${response.status}`);
+
+            throw new Error(
+                `HTTP Server Error ${response.status}`
+            );
         }
 
         return response.text();
+
     })
+
     .then(text => {
 
-        console.log("Apps Script response:", text);
+        console.log(
+            "Apps Script response:",
+            text
+        );
+
+
+        /* -------------------------------------------------
+           DETECT APPS SCRIPT HTML ERROR PAGE
+        ------------------------------------------------- */
 
         if (
             text.trim().startsWith("<!DOCTYPE") ||
             text.includes("<html")
         ) {
+
             throw new Error(
                 "Server execution timeout. Please try again."
             );
         }
 
+
         let result;
 
+
+        /* -------------------------------------------------
+           PARSE JSON
+        ------------------------------------------------- */
+
         try {
-            result = JSON.parse(text);
-        } catch (error) {
-            console.error("JSON parsing failed:", error);
+
+            result =
+                JSON.parse(text);
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "JSON parsing failed:",
+                error
+            );
+
             throw new Error(
                 "Invalid response format received from server."
             );
         }
 
+
+        /* -------------------------------------------------
+           HANDLE RESPONSE
+        ------------------------------------------------- */
+
         handleResponse(result);
+
     })
+
     .catch(error => {
 
         console.error(
@@ -843,18 +935,26 @@ function processCheckIn(attendeeId) {
             error
         );
 
+
         const timestamp =
             typeof getCurrentTimestamp === "function"
                 ? getCurrentTimestamp()
                 : "";
+
+
+        const errorMessage =
+            error.message ||
+            "Unable to process scan.";
+
 
         updateStatus(
             "error",
             "TRY AGAIN",
             "",
             timestamp,
-            error.message || "Unable to process scan."
+            errorMessage
         );
+
 
         showResultModal(
             "error",
@@ -862,9 +962,14 @@ function processCheckIn(attendeeId) {
             "",
             attendeeId,
             timestamp,
-            error.message || "Unable to process scan."
+            errorMessage
         );
+
+
+        finishProcessing();
+
     });
+
 }
 
 /* =========================================================
@@ -1274,28 +1379,23 @@ function handleResponse(res) {
 
 
 
-            payingParticipants:
-                Number(
-                    data.payingParticipants ??
-                    data.payee ??
-                    (
-                        serverBulkInfo &&
-                        serverBulkInfo.payingParticipants
-                    ) ??
-                    (
-                        serverBulkInfo &&
-                        serverBulkInfo.payee
-                    ) ??
-                    (
-                        data.registration &&
-                        data.registration.payee
-                    ) ??
-                    0
-                )
-
+            payingParticipants: 0
         };
     }
 
+    if (bulkInfo) {
+
+    bulkInfo.payingParticipants =
+        Math.max(
+            Number(bulkInfo.headcount || 0) -
+            Number(bulkInfo.free || 0),
+            0
+        );
+
+}
+    
+
+}
 
     /* =====================================================
        DEBUG
@@ -1682,7 +1782,7 @@ function handleResponse(res) {
 
 
     finishProcessing();
-}
+
 
 
 /* =========================================================
@@ -2253,11 +2353,11 @@ function showResultModal(
         ------------------------------------------------- */
 
         const payingParticipants =
-            Number(
-                bulkInfo.payingParticipants ??
-                0
-            );
-
+            Math.max(
+            Number(bulkInfo.headcount || 0) -
+            Number(bulkInfo.free || 0),
+            0
+        );
 
         if (modalPaying) {
 
