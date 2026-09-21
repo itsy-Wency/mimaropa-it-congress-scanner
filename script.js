@@ -267,6 +267,7 @@ function setupResultModalEvents() {
         return;
     }
 
+
     const continueButton =
         resultModal.querySelector(".modal-action");
 
@@ -274,55 +275,119 @@ function setupResultModalEvents() {
         return;
     }
 
+
     continueButton.addEventListener(
         "click",
-        function () {
+        async function () {
 
             console.log(
                 "CONTINUE SCANNING clicked."
             );
 
+
             /*
-             * Allow the Bootstrap modal to finish
-             * closing first.
+             * Reset all scan locks immediately.
              */
-            setTimeout(() => {
-                isProcessing = false;
-                isQrCheckInProcessing = false;
 
-                lastScannedCode = "";
-                lastScanTime = 0;
+            isProcessing = false;
 
-                clearInput();
+            isQrCheckInProcessing = false;
 
-                /*
-                 * If the scanner is already running,
-                 * simply allow it to scan again.
-                 */
-                if (
-                    html5QrCode &&
-                    html5QrCode.isScanning
-                ) {
+            lastScannedCode = "";
+
+            lastScanTime = 0;
+
+            clearInput();
+
+
+            /*
+             * Give Bootstrap time to finish
+             * closing the result modal.
+             */
+
+            setTimeout(
+                async () => {
 
                     console.log(
-                        "QR scanner is already running."
+                        "Resetting QR scanner..."
                     );
 
-                    return;
 
-                }
+                    /*
+                     * STOP EXISTING SCANNER
+                     */
 
-                /*
-                 * If the scanner stopped,
-                 * start it again.
-                 */
-                console.log(
-                    "Restarting QR scanner..."
-                );
+                    if (html5QrCode) {
 
-                initializeScanner();
+                        try {
 
-            }, 300);
+                            if (
+                                html5QrCode.isScanning
+                            ) {
+
+                                console.log(
+                                    "Stopping existing QR scanner..."
+                                );
+
+                                await html5QrCode.stop();
+
+                            }
+
+                        }
+
+                        catch (error) {
+
+                            console.warn(
+                                "Scanner stop warning:",
+                                error
+                            );
+
+                        }
+
+
+                        /*
+                         * CLEAR EXISTING SCANNER
+                         */
+
+                        try {
+
+                            await html5QrCode.clear();
+
+                        }
+
+                        catch (error) {
+
+                            console.warn(
+                                "Scanner clear warning:",
+                                error
+                            );
+
+                        }
+
+
+                        /*
+                         * Remove old scanner instance.
+                         */
+
+                        html5QrCode = null;
+
+                    }
+
+
+                    /*
+                     * START A COMPLETELY NEW SCANNER
+                     */
+
+                    console.log(
+                        "Starting fresh QR scanner..."
+                    );
+
+
+                    initializeScanner();
+
+                },
+                300
+            );
 
         }
     );
@@ -334,6 +399,20 @@ function setupResultModalEvents() {
 ========================================================= */
 
 function initializeScanner() {
+
+
+    if (
+        html5QrCode
+    ) {
+
+        console.log(
+            "QR scanner instance already exists."
+        );
+
+        return;
+
+    }
+
 
     if (
         typeof Html5Qrcode ===
@@ -1300,98 +1379,114 @@ function handleResponse(res) {
         );
 
 
-    /* =====================================================
-       BUILD BULK INFO
-    ===================================================== */
-
     let bulkInfo = null;
 
+if (bulkFlag) {
 
-    if (bulkFlag) {
+    bulkInfo = {
 
-        bulkInfo = {
+        isBulk: true,
 
-            isBulk: true,
+        /* ---------------------------------------------
+           SCHOOL
+           Backend value comes from Column F
+        --------------------------------------------- */
 
-
-            /* ---------------------------------------------
-               COLUMN F
-               SCHOOL
-            --------------------------------------------- */
-
-            school:
-                String(
-                    data.school ||
-                    data.schoolName ||
-                    (
-                        serverBulkInfo &&
-                        serverBulkInfo.school
-                    ) ||
-                    ""
-                )
-                .trim(),
+        school:
+            String(
+                data.school ||
+                data.schoolName ||
+                (
+                    serverBulkInfo &&
+                    serverBulkInfo.school
+                ) ||
+                ""
+            )
+            .trim(),
 
 
-            /* ---------------------------------------------
-               COLUMN M
-               HEADCOUNT
-            --------------------------------------------- */
+        /* ---------------------------------------------
+           HEADCOUNT
+           Backend value comes from Column M
+        --------------------------------------------- */
 
-            headcount:
-                Number(
-                    data.headcount ??
-                    data.headCount ??
-                    (
-                        serverBulkInfo &&
-                        serverBulkInfo.headcount
-                    ) ??
-                    (
-                        data.registration &&
-                        data.registration.headcount
-                    ) ??
-                    0
-                ),
-
-
-            /* ---------------------------------------------
-               COLUMN N
-               FREE
-            --------------------------------------------- */
-
-            free:
-                Number(
-                    data.free ??
-                    data.freeParticipants ??
-                    (
-                        serverBulkInfo &&
-                        serverBulkInfo.free
-                    ) ??
-                    (
-                        serverBulkInfo &&
-                        serverBulkInfo.freeParticipants
-                    ) ??
-                    (
-                        data.registration &&
-                        data.registration.free
-                    ) ??
-                    0
-                ),
+        headcount:
+            Number(
+                data.headcount ??
+                data.headCount ??
+                (
+                    serverBulkInfo &&
+                    serverBulkInfo.headcount
+                ) ??
+                (
+                    data.registration &&
+                    data.registration.headcount
+                ) ??
+                0
+            ),
 
 
+        /* ---------------------------------------------
+           FREE PARTICIPANTS
+           Backend value comes from Column N
+        --------------------------------------------- */
 
-            payingParticipants: 0
-        };
-    }
+        free:
+            Number(
+                data.free ??
+                data.freeParticipants ??
+                (
+                    serverBulkInfo &&
+                    serverBulkInfo.free
+                ) ??
+                (
+                    serverBulkInfo &&
+                    serverBulkInfo.freeParticipants
+                ) ??
+                (
+                    data.registration &&
+                    data.registration.free
+                ) ??
+                0
+            ),
 
-    if (bulkInfo) {
 
-    bulkInfo.payingParticipants =
-        Math.max(
-            Number(bulkInfo.headcount || 0) -
-            Number(bulkInfo.free || 0),
-            0
-        );
+        /* ---------------------------------------------
+           PAYING PARTICIPANTS
+           
+           IMPORTANT:
+           DO NOT CALCULATE THIS IN THE FRONTEND.
 
+           The backend already calculates:
+               HEADCOUNT - FREE
+
+           The frontend only receives and displays it.
+        --------------------------------------------- */
+
+        payingParticipants:
+            Number(
+                data.payingParticipants ??
+                data.payee ??
+                (
+                    serverBulkInfo &&
+                    serverBulkInfo.payingParticipants
+                ) ??
+                (
+                    serverBulkInfo &&
+                    serverBulkInfo.payee
+                ) ??
+                (
+                    data.registration &&
+                    data.registration.payingParticipants
+                ) ??
+                (
+                    data.registration &&
+                    data.registration.payee
+                ) ??
+                0
+            )
+
+    };
 }
 
 
@@ -1679,12 +1774,13 @@ function handleResponse(res) {
     }
 
 
-    /* =====================================================
+        /* =====================================================
        BLOCKED
     ===================================================== */
 
     if (
-        status === "BLOCKED"
+        status === "BLOCKED" ||
+        status === "DENIED"
     ) {
 
         playSound("error");
@@ -1697,14 +1793,38 @@ function handleResponse(res) {
 
 
         const safeTimestamp =
-        formatModalTimestamp(
-            timestamp || getCurrentTimestamp()
-        );
+            formatModalTimestamp(
+                timestamp || getCurrentTimestamp()
+            );
 
 
-        const safeMessage =
-            message ||
+        /* -------------------------------------------------
+           FRIENDLY USER-FACING BLOCKED MESSAGE
+           
+           Do NOT display the raw backend message.
+           ------------------------------------------------- */
+
+        let safeMessage =
             "This check-in cannot be processed yet.";
+
+
+        if (
+            selectedSession === "AM_SNACK"
+        ) {
+
+            safeMessage =
+                "Attendance must be recorded first.";
+
+        }
+
+        else if (
+            selectedSession === "PM_SNACK"
+        ) {
+
+            safeMessage =
+                "AM Snack must be claimed first.";
+
+        }
 
 
         updateStatus(
@@ -1733,7 +1853,6 @@ function handleResponse(res) {
         return;
     }
 
-}
     /* =====================================================
        INVALID / UNKNOWN ERROR
     ===================================================== */
@@ -1781,7 +1900,7 @@ function handleResponse(res) {
 
     finishProcessing();
 
-
+}
 
 /* =========================================================
    FINISH PROCESSING
@@ -2351,11 +2470,9 @@ function showResultModal(
         ------------------------------------------------- */
 
         const payingParticipants =
-            Math.max(
-            Number(bulkInfo.headcount || 0) -
-            Number(bulkInfo.free || 0),
-            0
-        );
+            Number(
+                bulkInfo.payingParticipants ?? 0
+            );
 
         if (modalPaying) {
 
