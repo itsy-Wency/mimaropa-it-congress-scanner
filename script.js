@@ -1146,30 +1146,46 @@ function handleResponse(res) {
 
 
     /* =====================================================
-       NAME
-    ===================================================== */
+   SERVER REGISTRATION FALLBACK
+===================================================== */
 
-    let name =
-        String(
-            data.name ||
-            data.fullName ||
-            data.fullname ||
-            ""
-        )
-        .trim();
+const serverRegistration =
+    data.registration &&
+    typeof data.registration === "object"
+        ? data.registration
+        : {};
 
 
-    /* =====================================================
-       ATTENDEE ID
-    ===================================================== */
+/* =====================================================
+   NAME
+===================================================== */
 
-    let attendeeId =
-        String(
-            data.attendeeId ||
-            data.id ||
-            ""
-        )
-        .trim();
+let name =
+    String(
+        data.name ||
+        data.fullName ||
+        data.fullname ||
+        serverRegistration.fullName ||
+        serverRegistration.name ||
+        ""
+    )
+    .trim();
+
+
+/* =====================================================
+   ATTENDEE ID
+===================================================== */
+
+let attendeeId =
+    String(
+        data.attendeeId ||
+        data.id ||
+        serverRegistration.groupId ||
+        serverRegistration.attendeeId ||
+        serverRegistration.id ||
+        ""
+    )
+    .trim();
 
 
     /* =====================================================
@@ -1255,16 +1271,18 @@ function handleResponse(res) {
     ===================================================== */
 
     const school =
-        String(
-            data.school ||
-            data.schoolName ||
-            (
-                directoryRecord &&
-                directoryRecord.school
-            ) ||
-            ""
-        )
-        .trim();
+    String(
+        data.school ||
+        data.schoolName ||
+        serverRegistration.school ||
+        serverRegistration.schoolName ||
+        (
+            directoryRecord &&
+            directoryRecord.school
+        ) ||
+        ""
+    )
+    .trim();
 
 
     /* =====================================================
@@ -1349,34 +1367,44 @@ function handleResponse(res) {
     ===================================================== */
 
     const bulkFlag =
-        data.isBulk === true ||
+    data.isBulk === true ||
 
-        (
-            serverBulkInfo &&
-            serverBulkInfo.isBulk === true
-        ) ||
+    (
+        serverBulkInfo &&
+        serverBulkInfo.isBulk === true
+    ) ||
 
+    serverRegistration.isBulk === true ||
+
+    String(
+        data.isBulk || ""
+    ).toLowerCase() === "true" ||
+
+    (
+        serverBulkInfo &&
         String(
-            data.isBulk || ""
-        ).toLowerCase() === "true" ||
+            serverBulkInfo.isBulk || ""
+        ).toLowerCase() === "true"
+    ) ||
 
-        (
-            serverBulkInfo &&
-            String(
-                serverBulkInfo.isBulk || ""
-            ).toLowerCase() === "true"
-        ) ||
+    String(
+        serverRegistration.isBulk || ""
+    ).toLowerCase() === "true" ||
 
+    String(
+        data.isBulk || ""
+    ) === "1" ||
+
+    (
+        serverBulkInfo &&
         String(
-            data.isBulk || ""
-        ) === "1" ||
+            serverBulkInfo.isBulk || ""
+        ) === "1"
+    ) ||
 
-        (
-            serverBulkInfo &&
-            String(
-                serverBulkInfo.isBulk || ""
-            ) === "1"
-        );
+    String(
+        serverRegistration.isBulk || ""
+    ) === "1";
 
 
     let bulkInfo = null;
@@ -1526,13 +1554,6 @@ if (bulkFlag) {
     /* =====================================================
        REGISTRATION OBJECT
     ===================================================== */
-
-    const serverRegistration =
-        data.registration &&
-        typeof data.registration === "object"
-            ? data.registration
-            : {};
-
 
     const registration = {
 
