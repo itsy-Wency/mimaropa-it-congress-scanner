@@ -6,7 +6,8 @@
 
 
 /* =========================================================
-   CONFIGURATION
+   SIMPLE SETUP
+   This part holds the app link and the basic values it needs.
 ========================================================= */
 
 const DEPLOYED_WEB_APP_URL =
@@ -14,7 +15,8 @@ const DEPLOYED_WEB_APP_URL =
 
 
 /* =========================================================
-   GLOBAL VARIABLES
+   GLOBAL VALUES
+   These are the app's main "memory" items while it is running.
 ========================================================= */
 
 let html5QrCode = null;
@@ -28,22 +30,21 @@ let lastScanTime = 0;
 const SCAN_COOLDOWN = 2500;
 
 
-// Prevent the same QR code from triggering multiple
-// server requests at the same time.
+// This stops the same QR code from sending repeated requests
+// before the first one is finished.
 let isQrCheckInProcessing = false;
 
 /* =========================================================
    ATTENDEE DIRECTORY FALLBACK
-   The Apps Script endpoint exposes ?action=attendees.
-   This guarantees that the UI can resolve FULL NAME and
-   SCHOOL from the same Google Sheet even if the scan response
-   does not include those fields.
+   This is the app's backup list.
+   If the scan result is missing a name or school,
+   it can still look up the same attendee information from the sheet.
 ========================================================= */
-
 
 
 let attendeeDirectory = [];
 
+// This loads the list of people so the app can match names and schools faster.
 function loadAttendeeDirectory() {
     fetch(DEPLOYED_WEB_APP_URL + "?action=attendees", {
         method: "GET",
@@ -77,6 +78,7 @@ function loadAttendeeDirectory() {
 }
 
 function findAttendeeById(attendeeId) {
+    // Clean the ID so the match is not affected by extra spaces or lowercase letters.
     const cleanId = String(attendeeId || "").trim().toUpperCase();
 
     if (!cleanId || !Array.isArray(attendeeDirectory) || attendeeDirectory.length === 0) {
@@ -90,6 +92,7 @@ function findAttendeeById(attendeeId) {
     }) || null;
 }
 
+// If the result has no school, this gives it a fallback school name.
 function resolveSchoolName(rawSchool, directoryRecord, fallback = "School Not Specified") {
     const directSchool = String(rawSchool || "").trim();
     if (directSchool) return directSchool;
@@ -140,17 +143,22 @@ const confirmOverride =
 
 
 /* =========================================================
-   BOOT
+   APP START
+   This runs when the page is ready.
 ========================================================= */
 
 window.addEventListener("load", () => {
 
+    // Load the attendee list first so the app can match names later.
     loadAttendeeDirectory();
 
+    // Turn on the QR camera reader.
     initializeScanner();
 
+    // Connect buttons and keyboard actions.
     setupEvents();
 
+    // Prepare the result popup after each scan.
     setupResultModalEvents();
 
 });
@@ -400,7 +408,7 @@ function setupResultModalEvents() {
 
 function initializeScanner() {
 
-
+    // If a camera is already running, do not start another one.
     if (
         html5QrCode
     ) {
@@ -413,7 +421,7 @@ function initializeScanner() {
 
     }
 
-
+    // This checks if the QR library is available before using it.
     if (
         typeof Html5Qrcode ===
         "undefined"
@@ -430,7 +438,7 @@ function initializeScanner() {
         return;
     }
 
-
+    // This creates the actual scanner object that reads the code.
     html5QrCode =
         new Html5Qrcode("reader");
 
@@ -660,14 +668,8 @@ function handleQrSuccess(decodedText) {
 
     const now = Date.now();
 
-    /*
-     * IMPORTANT:
-     * Ignore additional QR detections while the current
-     * check-in request is still being processed.
-     *
-     * html5-qrcode can detect the same QR multiple times
-     * very quickly.
-     */
+    // This is a safety check: if one scan is already being processed,
+    // ignore the repeated reads that may come in right away.
     if (isQrCheckInProcessing) {
 
         console.log(
@@ -708,7 +710,7 @@ function handleQrSuccess(decodedText) {
 
 
     // ---------------------------------------------------------
-    // EXTRACT ATTENDEE ID
+    // GET THE ATTENDEE ID FROM THE QR CODE
     // ---------------------------------------------------------
 
     let attendeeId =
@@ -716,11 +718,9 @@ function handleQrSuccess(decodedText) {
 
 
     /*
-     * Extract ID inside parentheses if present.
-     *
+     * Some QR codes include extra text with the ID inside parentheses.
      * Example:
      * "Maria Rivera (ATT-BLK-RIVERA2)"
-     *
      * becomes:
      * "ATT-BLK-RIVERA2"
      */
@@ -852,6 +852,7 @@ function submitManualId() {
 
 function processCheckIn(attendeeId) {
 
+    // This is the main check-in action: send the ID and the chosen station to the server.
     console.log(
         "✅ processCheckIn() CALLED:",
         attendeeId
@@ -871,7 +872,7 @@ function processCheckIn(attendeeId) {
 
 
     /* -----------------------------------------------------
-       VALIDATE BEFORE LOCKING PROCESSING
+       BEFORE SENDING, CHECK THAT THE DATA IS COMPLETE
     ----------------------------------------------------- */
 
     if (!attendeeId) {
@@ -914,7 +915,7 @@ function processCheckIn(attendeeId) {
 
 
     /* -----------------------------------------------------
-       SEND REQUEST
+       SEND THE CHECK-IN REQUEST TO THE SERVER
     ----------------------------------------------------- */
 
     fetch(
@@ -1057,11 +1058,12 @@ function processCheckIn(attendeeId) {
 
 function handleResponse(res) {
 
+    // This is where the app reads the server's answer and turns it into something the screen can show.
     console.log("Processed result:", res);
 
 
     /* =====================================================
-       NORMALIZE APPS SCRIPT RESPONSE
+       CLEAN AND NORMALIZE THE SERVER RESPONSE
     ===================================================== */
 
     const data =
@@ -1676,7 +1678,7 @@ if (bulkFlag) {
 
 
     /* =====================================================
-       SUCCESS
+       GOOD RESULT: SUCCESS
     ===================================================== */
 
     if (
@@ -1733,10 +1735,9 @@ if (bulkFlag) {
 
 
     /* =====================================================
-       ALREADY SCANNED
+       THIS PERSON WAS ALREADY RECORDED
 
-       Supports both:
-
+       Supported values:
        ALREADY_SCANNED
        ALREADY_PROCESSED
     ===================================================== */
@@ -1796,7 +1797,8 @@ if (bulkFlag) {
 
 
         /* =====================================================
-       BLOCKED
+       BLOCKED OR DENIED
+       This means the person cannot do this action yet.
     ===================================================== */
 
     if (
@@ -2135,6 +2137,8 @@ function showResultModal(
     school = ""
 ) {
 
+    // This part fills the popup with the final result: success, duplicate, or error.
+
     const modalElement =
         document.getElementById("resultModal");
 
@@ -2354,18 +2358,8 @@ function showResultModal(
 
 
     /* =====================================================
-       REGISTRATION TYPE
-       
-       IMPORTANT:
-       
-       The frontend DOES NOT determine bulk status from
-       the attendee ID.
-       
-       It only trusts:
-       
-           bulkInfo.isBulk === true
-       
-       which ultimately comes from the Apps Script backend.
+       CHECK WHETHER THIS RESULT IS FOR A BULK REGISTRATION
+       The app only trusts the backend information for this.
     ===================================================== */
 
     const isBulk =
@@ -2383,19 +2377,8 @@ function showResultModal(
 
     /* =====================================================
        ALWAYS RESET BOTH SECTIONS FIRST
-       
-       This is extremely important.
-       
-       Example:
-       
-       Scan #1 = BULK
-       → bulk summary is shown
-       
-       Scan #2 = INDIVIDUAL
-       → bulk summary MUST be hidden again
-       
-       Therefore we hide the bulk section BEFORE checking
-       whether the current scan is bulk.
+       This keeps the popup clean between scans.
+       Example: one result may be bulk, the next may be individual.
     ===================================================== */
 
     if (bulkRegistrationInfo) {
@@ -3286,6 +3269,7 @@ function closeOverrideModal() {
 
 /* =========================================================
    AUDIO FEEDBACK
+   Small sound effects to help users know if the action worked.
 ========================================================= */
 
 function playSound(type) {
@@ -3422,6 +3406,7 @@ function playSound(type) {
 
 /* =========================================================
    FORMAT MODAL TIMESTAMP
+   Makes the time easier to read in the popup.
 ========================================================= */
 
 function formatModalTimestamp(timestamp) {
