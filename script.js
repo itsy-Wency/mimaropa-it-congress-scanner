@@ -11,7 +11,7 @@
 ========================================================= */
 
 const DEPLOYED_WEB_APP_URL =
-    "https://script.google.com/macros/s/AKfycbyLseZj1D40TxYwQXd87Kbcj78Zqhp8kKljXEwciCuFXlJXtGw_li5FmsxAcWyQeKr1Hw/exec";
+    "https://script.google.com/macros/s/AKfycby40RJei2RhtkG_AZIr8EkWo4TDZ2LIfWvQim-YlOWa2svc01_gOgCiNJFiIhWVVhkb/exec";
 
 
 /* =========================================================
